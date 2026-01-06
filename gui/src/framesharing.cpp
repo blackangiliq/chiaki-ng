@@ -3,6 +3,11 @@
 #include "framesharing.h"
 #include <QDebug>
 
+extern "C" {
+#include <libavutil/hwcontext.h>
+#include <libavutil/pixdesc.h>
+}
+
 // ============================================================================
 // FrameSharingLogger Implementation
 // ============================================================================
@@ -79,6 +84,9 @@ FrameSharing::FrameSharing()
     , frameWidth(0)
     , frameHeight(0)
     , frameCounter(0)
+    , successFrameCounter(0)
+    , lastErrorFormat(-1)
+    , hwFrameSkipCount(0)
 #ifdef Q_OS_WIN
     , hMapFile(nullptr)
     , hEvent(nullptr)
@@ -150,7 +158,9 @@ void FrameSharing::cleanup()
     
     frameWidth = 0;
     frameHeight = 0;
+#ifdef Q_OS_WIN
     totalMappedSize = 0;
+#endif
     
     FrameSharingLogger::instance().logInfo("FrameSharing cleanup completed");
 }
@@ -184,6 +194,9 @@ bool FrameSharing::initialize(int width, int height)
     frameWidth = width;
     frameHeight = height;
     frameCounter = 0;
+    successFrameCounter = 0;
+    lastErrorFormat = -1;
+    hwFrameSkipCount = 0;
     
 #ifdef Q_OS_WIN
     // Calculate sizes
@@ -300,10 +313,24 @@ bool FrameSharing::initialize(int width, int height)
     initialized.store(true);
     active.store(true);
     
-    FrameSharingLogger::instance().logInfo("FrameSharing initialized successfully!");
-    FrameSharingLogger::instance().logInfo(
-        QString("C# client should connect to: SharedMemory='%1', Event='%2'")
-        .arg(getSharedMemoryName(), getEventName()));
+    FrameSharingLogger::instance().logInfo("========================================");
+    FrameSharingLogger::instance().logInfo("  FRAME SHARING INITIALIZED SUCCESSFULLY!");
+    FrameSharingLogger::instance().logInfo("========================================");
+    FrameSharingLogger::instance().logInfo(QString("  Resolution: %1 x %2").arg(width).arg(height));
+    FrameSharingLogger::instance().logInfo(QString("  Frame size: %1 bytes (%2 MB)").arg(bgraBufferSize).arg(bgraBufferSize / 1024.0 / 1024.0, 0, 'f', 2));
+    FrameSharingLogger::instance().logInfo("----------------------------------------");
+    FrameSharingLogger::instance().logInfo("  C# CONNECTION INFO:");
+    FrameSharingLogger::instance().logInfo(QString("    Shared Memory Name: %1").arg(getSharedMemoryName()));
+    FrameSharingLogger::instance().logInfo(QString("    Event Name: %1").arg(getEventName()));
+    FrameSharingLogger::instance().logInfo("    Pixel Format: BGRA32 (4 bytes per pixel)");
+    FrameSharingLogger::instance().logInfo(QString("    Stride: %1 bytes per row").arg(width * 4));
+    FrameSharingLogger::instance().logInfo("----------------------------------------");
+    FrameSharingLogger::instance().logInfo("  C# CODE EXAMPLE:");
+    FrameSharingLogger::instance().logInfo("    var receiver = new ChiakiFrameReceiver();");
+    FrameSharingLogger::instance().logInfo("    if (receiver.Connect()) {");
+    FrameSharingLogger::instance().logInfo("        var frame = receiver.TryGetFrame();");
+    FrameSharingLogger::instance().logInfo("    }");
+    FrameSharingLogger::instance().logInfo("========================================");
     
     return true;
 }
@@ -316,13 +343,57 @@ void FrameSharing::shutdown()
         return;
     }
     
-    FrameSharingLogger::instance().logInfo(
-        QString("Shutting down FrameSharing after %1 frames").arg(frameCounter));
+    double successRate = frameCounter > 0 ? (successFrameCounter * 100.0 / frameCounter) : 0;
+    
+    FrameSharingLogger::instance().logInfo("========================================");
+    FrameSharingLogger::instance().logInfo("  FRAME SHARING SESSION ENDED");
+    FrameSharingLogger::instance().logInfo("========================================");
+    FrameSharingLogger::instance().logInfo(QString("  Total frames processed: %1").arg(frameCounter));
+    FrameSharingLogger::instance().logInfo(QString("  Successfully shared: %1").arg(successFrameCounter));
+    FrameSharingLogger::instance().logInfo(QString("  HW frames skipped: %1").arg(hwFrameSkipCount));
+    FrameSharingLogger::instance().logInfo(QString("  Success rate: %1%").arg(successRate, 0, 'f', 1));
+    FrameSharingLogger::instance().logInfo("========================================");
     
     active.store(false);
     initialized.store(false);
     
     cleanup();
+}
+
+bool FrameSharing::isHardwareFrame(AVFrame *frame)
+{
+    if (frame == nullptr) return false;
+    
+    // Check if frame has hardware context
+    if (frame->hw_frames_ctx != nullptr) return true;
+    
+    // Check known hardware pixel formats
+    switch (frame->format) {
+        case AV_PIX_FMT_VULKAN:      // 190
+        case AV_PIX_FMT_VAAPI:
+        case AV_PIX_FMT_VDPAU:
+        case AV_PIX_FMT_CUDA:
+        case AV_PIX_FMT_D3D11:
+        case AV_PIX_FMT_D3D11VA_VLD:
+        case AV_PIX_FMT_DXVA2_VLD:
+        case AV_PIX_FMT_QSV:
+        case AV_PIX_FMT_VIDEOTOOLBOX:
+        case AV_PIX_FMT_MEDIACODEC:
+        case AV_PIX_FMT_DRM_PRIME:
+        case AV_PIX_FMT_OPENCL:
+            return true;
+        default:
+            return false;
+    }
+}
+
+QString FrameSharing::getPixelFormatName(int format)
+{
+    const char* name = av_get_pix_fmt_name(static_cast<AVPixelFormat>(format));
+    if (name) {
+        return QString::fromUtf8(name);
+    }
+    return QString("unknown(%1)").arg(format);
 }
 
 bool FrameSharing::convertFrameToBGRA(AVFrame *srcFrame)
@@ -332,10 +403,31 @@ bool FrameSharing::convertFrameToBGRA(AVFrame *srcFrame)
         return false;
     }
     
+    // Check for hardware frames - cannot convert directly
+    if (isHardwareFrame(srcFrame)) {
+        hwFrameSkipCount++;
+        // Only log once per format to avoid spam
+        if (lastErrorFormat != srcFrame->format) {
+            lastErrorFormat = srcFrame->format;
+            FrameSharingLogger::instance().logWarning(
+                QString("Hardware frame detected (format: %1 = %2). "
+                        "Frame sharing requires software frames. "
+                        "Consider disabling hardware decoding for frame sharing.")
+                .arg(srcFrame->format).arg(getPixelFormatName(srcFrame->format)));
+        }
+        return false;
+    }
+    
     if (srcFrame->width != frameWidth || srcFrame->height != frameHeight) {
         FrameSharingLogger::instance().logWarning(
             QString("Frame size mismatch: expected %1x%2, got %3x%4")
             .arg(frameWidth).arg(frameHeight).arg(srcFrame->width).arg(srcFrame->height));
+        return false;
+    }
+    
+    // Check if source frame data is valid
+    if (srcFrame->data[0] == nullptr) {
+        FrameSharingLogger::instance().logError("Source frame data is null");
         return false;
     }
     
@@ -348,9 +440,20 @@ bool FrameSharing::convertFrameToBGRA(AVFrame *srcFrame)
     );
     
     if (swsContext == nullptr) {
-        FrameSharingLogger::instance().logError(
-            QString("Failed to create sws context for format %1").arg(srcFrame->format));
+        // Only log once per format to avoid spam
+        if (lastErrorFormat != srcFrame->format) {
+            lastErrorFormat = srcFrame->format;
+            FrameSharingLogger::instance().logError(
+                QString("Failed to create sws context for format %1 (%2). "
+                        "This pixel format may not be supported for conversion.")
+                .arg(srcFrame->format).arg(getPixelFormatName(srcFrame->format)));
+        }
         return false;
+    }
+    
+    // Reset error format on success
+    if (lastErrorFormat == srcFrame->format) {
+        lastErrorFormat = -1;
     }
     
     // Set up destination
@@ -398,6 +501,8 @@ bool FrameSharing::sendFrame(AVFrame *frame)
         return false;
     }
     
+    frameCounter++;
+    
 #ifdef Q_OS_WIN
     if (mappedMemory == nullptr || header == nullptr || frameData == nullptr) {
         FrameSharingLogger::instance().logError("sendFrame: Invalid memory pointers");
@@ -411,13 +516,16 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     }
     
     if (frame->data[0] == nullptr) {
-        FrameSharingLogger::instance().logError("sendFrame: frame data is null");
+        // Hardware frames may have null data[0] - this is expected
+        if (!isHardwareFrame(frame)) {
+            FrameSharingLogger::instance().logError("sendFrame: frame data is null");
+        }
         return false;
     }
     
     // Convert frame to BGRA
     if (!convertFrameToBGRA(frame)) {
-        // Error already logged
+        // Error already logged (or it's a hardware frame which is expected to fail)
         return false;
     }
     
@@ -432,9 +540,9 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     memcpy(frameData, bgraBuffer, copySize);
     
     // Update header
-    frameCounter++;
+    successFrameCounter++;
     header->timestamp = QDateTime::currentMSecsSinceEpoch();
-    header->frameNumber = frameCounter;
+    header->frameNumber = successFrameCounter;
     header->ready = 1;
     
     // Memory barrier to ensure writes are visible
@@ -445,10 +553,22 @@ bool FrameSharing::sendFrame(AVFrame *frame)
         SetEvent(hEvent);
     }
     
-    // Log every 300 frames (approximately every 5 seconds at 60fps)
-    if (frameCounter % 300 == 0) {
-        FrameSharingLogger::instance().logDebug(
-            QString("Frame %1 shared successfully").arg(frameCounter));
+    // Log first successful frame
+    if (successFrameCounter == 1) {
+        FrameSharingLogger::instance().logInfo("========================================");
+        FrameSharingLogger::instance().logInfo("  FIRST FRAME SHARED SUCCESSFULLY!");
+        FrameSharingLogger::instance().logInfo(QString("  Frame format: %1").arg(getPixelFormatName(frame->format)));
+        FrameSharingLogger::instance().logInfo(QString("  Frame size: %1x%2").arg(frame->width).arg(frame->height));
+        FrameSharingLogger::instance().logInfo("  C# client can now receive frames!");
+        FrameSharingLogger::instance().logInfo("========================================");
+    }
+    
+    // Log statistics every 300 successful frames (approximately every 5 seconds at 60fps)
+    if (successFrameCounter % 300 == 0) {
+        double successRate = frameCounter > 0 ? (successFrameCounter * 100.0 / frameCounter) : 0;
+        FrameSharingLogger::instance().logInfo(
+            QString("[STATS] Success: %1 | Total: %2 | HW Skipped: %3 | Success Rate: %4%")
+            .arg(successFrameCounter).arg(frameCounter).arg(hwFrameSkipCount).arg(successRate, 0, 'f', 1));
     }
     
     return true;
@@ -457,4 +577,3 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     return false;
 #endif
 }
-

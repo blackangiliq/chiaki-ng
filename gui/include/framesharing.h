@@ -93,6 +93,12 @@ private:
     // Convert frame to BGRA format
     bool convertFrameToBGRA(AVFrame *srcFrame);
     
+    // Check if frame is hardware-accelerated (Vulkan, VAAPI, etc.)
+    bool isHardwareFrame(AVFrame *frame);
+    
+    // Get pixel format name for logging
+    QString getPixelFormatName(int format);
+    
     // Clean up resources safely
     void cleanup();
     
@@ -101,6 +107,9 @@ private:
     int frameWidth;
     int frameHeight;
     uint64_t frameCounter;
+    uint64_t successFrameCounter;
+    int lastErrorFormat;
+    uint64_t hwFrameSkipCount;
     
     QMutex sendMutex;
     
