@@ -3,6 +3,7 @@
 #include "qmlsvgprovider.h"
 #include "chiaki/log.h"
 #include "streamsession.h"
+#include "framesharing.h"
 
 #include <qpa/qplatformnativeinterface.h>
 
@@ -317,6 +318,19 @@ void QmlMainWindow::presentFrame(AVFrame *frame, int32_t frames_lost)
         if (!grab_input && settings->GetHideCursor())
             setCursor(Qt::BlankCursor);
         emit hasVideoChanged();
+        
+        // Initialize frame sharing when video starts (auto-start by default)
+        if (frame && frame->width > 0 && frame->height > 0) {
+            if (!FrameSharing::instance().isActive()) {
+                FrameSharing::instance().initialize(frame->width, frame->height);
+            }
+        }
+    }
+
+    // Share frame to external applications via shared memory
+    // This is wrapped in safe macro that catches all exceptions
+    if (frame) {
+        SAFE_SHARE_FRAME(frame);
     }
 
     update();
@@ -523,6 +537,9 @@ void QmlMainWindow::init(Settings *settings, bool exit_app_on_stream_exit)
             has_video = false;
             setCursor(Qt::ArrowCursor);
             emit hasVideoChanged();
+            
+            // Shutdown frame sharing when video stops
+            FrameSharing::instance().shutdown();
         }
         if(session && exit_app_on_stream_exit)
         {

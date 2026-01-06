@@ -54,6 +54,8 @@ set(SOURCE_FILES
 	src/qmlsvgprovider.cpp
 	include/systemdinhibit.h
 	src/systemdinhibit.cpp
+	include/framesharing.h
+	src/framesharing.cpp
 	)
 set(RESOURCE_FILES "")
 
