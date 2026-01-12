@@ -4,7 +4,6 @@
 #ifndef CHIAKI_FRAMESHARING_H
 #define CHIAKI_FRAMESHARING_H
 
-#include <QDebug>
 #include <atomic>
 
 extern "C" {
@@ -19,12 +18,12 @@ extern "C" {
 
 #pragma pack(push, 1)
 struct FrameSharingHeader {
-    uint32_t magic;          // 0x4B414843
-    uint32_t version;        // 2
+    uint32_t magic;
+    uint32_t version;
     uint32_t width;
     uint32_t height;
     uint32_t stride;
-    uint32_t format;         // 0 = BGRA32
+    uint32_t format;
     uint64_t timestamp;
     uint64_t frameNumber;
     uint32_t dataSize;
@@ -44,6 +43,11 @@ public:
     void shutdown();
     bool sendFrame(AVFrame *frame);
     bool isActive() const { return active.load(); }
+    
+    // Get profiling results (call after 10 seconds)
+    double getAvgWriteTimeUs() const { return profileFrameCount > 0 ? (double)profileTotalUs / profileFrameCount : 0; }
+    uint64_t getProfileFrameCount() const { return profileFrameCount; }
+    bool isProfilingDone() const { return profilingDone; }
 
 private:
     FrameSharing() : active(false), frameNumber(0), swsCtx(nullptr)
@@ -67,8 +71,6 @@ private:
 #ifdef Q_OS_WIN
     HANDLE hMap, hEvent;
     void *mem;
-    
-    // Profiling (first 10 seconds only)
     bool profilingDone;
     uint64_t profileFrameCount;
     uint64_t profileTotalUs;

@@ -12,7 +12,6 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     frameNumber = 0;
     
 #ifdef Q_OS_WIN
-    // Reset profiling
     profilingDone = false;
     profileFrameCount = 0;
     profileTotalUs = 0;
@@ -23,14 +22,10 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     
     hMap = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
                                0, (DWORD)totalSize, L"ChiakiFrameShare");
-    if (!hMap) {
-        qWarning() << "FrameSharing: CreateFileMapping failed:" << GetLastError();
-        return false;
-    }
+    if (!hMap) return false;
     
     mem = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, totalSize);
     if (!mem) {
-        qWarning() << "FrameSharing: MapViewOfFile failed:" << GetLastError();
         CloseHandle(hMap); hMap = nullptr;
         return false;
     }
@@ -43,7 +38,6 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     
     hEvent = CreateEventW(nullptr, FALSE, FALSE, L"ChiakiFrameEvent");
     if (!hEvent) {
-        qWarning() << "FrameSharing: CreateEvent failed:" << GetLastError();
         UnmapViewOfFile(mem); mem = nullptr;
         CloseHandle(hMap); hMap = nullptr;
         return false;
@@ -51,12 +45,10 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     
     QueryPerformanceCounter(&profileStartTime);
 #else
-    qWarning() << "FrameSharing: Only supported on Windows";
     return false;
 #endif
 
     active.store(true);
-    qInfo() << "FrameSharing: Ready!" << w << "x" << h;
     return true;
 }
 
@@ -65,21 +57,12 @@ void FrameSharing::shutdown()
     active.store(false);
     
 #ifdef Q_OS_WIN
-    // Log profiling results if collected
-    if (profileFrameCount > 0 && !profilingDone) {
-        double avgUs = (double)profileTotalUs / profileFrameCount;
-        qInfo() << "FrameSharing: Profiling -" << profileFrameCount << "frames, avg write time:" << avgUs << "us (" << (avgUs/1000.0) << "ms)";
-    }
-    
     if (mem) { UnmapViewOfFile(mem); mem = nullptr; }
     if (hMap) { CloseHandle(hMap); hMap = nullptr; }
     if (hEvent) { CloseHandle(hEvent); hEvent = nullptr; }
 #endif
     
     if (swsCtx) { sws_freeContext(swsCtx); swsCtx = nullptr; }
-    
-    if (frameNumber > 0)
-        qInfo() << "FrameSharing: Total sent:" << frameNumber << "frames";
 }
 
 bool FrameSharing::sendFrame(AVFrame *frame)
@@ -108,7 +91,6 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     uint8_t *dstSlice[4] = { dst, nullptr, nullptr, nullptr };
     int dstStride[4] = { stride, 0, 0, 0 };
     
-    // Profile write time for first 10 seconds only
     LARGE_INTEGER t1, t2;
     bool shouldProfile = !profilingDone;
     if (shouldProfile) QueryPerformanceCounter(&t1);
@@ -122,27 +104,10 @@ bool FrameSharing::sendFrame(AVFrame *frame)
         profileTotalUs += ((t2.QuadPart - t1.QuadPart) * 1000000) / perfFreq.QuadPart;
         profileFrameCount++;
         
-        // Check if 10 seconds passed
         LARGE_INTEGER now;
         QueryPerformanceCounter(&now);
-        double elapsedSec = (double)(now.QuadPart - profileStartTime.QuadPart) / perfFreq.QuadPart;
-        
-        if (elapsedSec >= 10.0) {
-            double avgUs = (double)profileTotalUs / profileFrameCount;
-            double avgMs = avgUs / 1000.0;
-            int dataSize = stride * fh;
-            double mbps = (dataSize / 1024.0 / 1024.0) / (avgMs / 1000.0);
-            
-            qInfo() << "=== FrameSharing Profiling (10s) ===";
-            qInfo() << "  Resolution:" << fw << "x" << fh;
-            qInfo() << "  Frames:" << profileFrameCount;
-            qInfo() << "  Avg write:" << avgMs << "ms (" << avgUs << "us)";
-            qInfo() << "  Speed:" << mbps << "MB/s";
-            qInfo() << "  Frame size:" << (dataSize/1024) << "KB";
-            qInfo() << "====================================";
-            
+        if ((double)(now.QuadPart - profileStartTime.QuadPart) / perfFreq.QuadPart >= 10.0)
             profilingDone = true;
-        }
     }
     
     frameNumber++;
@@ -156,13 +121,6 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     MemoryBarrier();
     hdr->ready = 1;
     SetEvent(hEvent);
-    
-    // Log resolution change only
-    static int lastW = 0, lastH = 0;
-    if (fw != lastW || fh != lastH) {
-        qInfo() << "FrameSharing:" << fw << "x" << fh;
-        lastW = fw; lastH = fh;
-    }
     
     return true;
 #else
