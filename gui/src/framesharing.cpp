@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
-// Simple & Fast Frame Sharing - v2.0
+// Simple & Fast Frame Sharing - v2.1 (Optimized)
 
 #include "framesharing.h"
 
 bool FrameSharing::initialize(int width, int height)
 {
-    QMutexLocker lock(&mutex);
-    
     if (active.load()) shutdown();
     
     w = width;
@@ -63,7 +61,6 @@ bool FrameSharing::initialize(int width, int height)
 
 void FrameSharing::shutdown()
 {
-    QMutexLocker lock(&mutex);
     active.store(false);
     
 #ifdef Q_OS_WIN
@@ -80,53 +77,43 @@ void FrameSharing::shutdown()
 
 bool FrameSharing::sendFrame(AVFrame *frame)
 {
-    if (!active.load() || !frame || !frame->data[0]) return false;
-    
-    QMutexLocker lock(&mutex);
-    if (!active.load()) return false;
+    // Fast path checks (no locking)
+    if (!active.load() || !frame || !frame->data[0] || !mem) 
+        return false;
     
 #ifdef Q_OS_WIN
-    if (!mem) return false;
-    
     auto *hdr = static_cast<FrameSharingHeader*>(mem);
     uint8_t *dst = static_cast<uint8_t*>(mem) + sizeof(FrameSharingHeader);
     
-    // Get/create converter (cached)
+    // Get/create converter (cached - thread safe for single producer)
     swsCtx = sws_getCachedContext(swsCtx,
         frame->width, frame->height, (AVPixelFormat)frame->format,
         w, h, AV_PIX_FMT_BGRA,
         SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
     
-    if (!swsCtx) {
-        qWarning() << "FrameSharing: Can't convert format" << frame->format;
-        return false;
-    }
+    if (!swsCtx) return false;
     
-    // Convert directly to shared memory
+    // Convert directly to shared memory (fastest path)
     uint8_t *dstSlice[4] = { dst, nullptr, nullptr, nullptr };
     int dstStride[4] = { w * 4, 0, 0, 0 };
     
-    int ret = sws_scale(swsCtx, frame->data, frame->linesize, 0, frame->height,
-                        dstSlice, dstStride);
-    if (ret != h) return false;
+    if (sws_scale(swsCtx, frame->data, frame->linesize, 0, frame->height,
+                  dstSlice, dstStride) != h)
+        return false;
     
-    // Update header
+    // Update header atomically
     frameNumber++;
-    hdr->timestamp = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
     hdr->frameNumber = frameNumber;
-    MemoryBarrier();
+    hdr->timestamp = GetTickCount64(); // Faster than chrono
+    
+    MemoryBarrier(); // Ensure writes are visible
     hdr->ready = 1;
     
-    // Signal consumer
-    if (hEvent) SetEvent(hEvent);
+    SetEvent(hEvent); // Signal consumer
     
-    // Log first frame and stats every 5 seconds (300 frames @ 60fps)
-    if (frameNumber == 1) {
-        qInfo() << "FrameSharing: First frame sent! Format:" << frame->format;
-    } else if (frameNumber % 300 == 0) {
-        qInfo() << "FrameSharing: Sent" << frameNumber << "frames";
-    }
+    // Minimal logging
+    if (frameNumber == 1)
+        qInfo() << "FrameSharing: Streaming started, format:" << frame->format;
     
     return true;
 #else
