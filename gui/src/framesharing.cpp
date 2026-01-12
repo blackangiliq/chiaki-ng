@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
-// Simple & Fast Frame Sharing - v3.0 (NV12 - 62% smaller!)
+// Simple & Fast Frame Sharing - v2.3
 
 #include "framesharing.h"
 
@@ -12,8 +12,13 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     frameNumber = 0;
     
 #ifdef Q_OS_WIN
-    // NV12: Y plane (w*h) + UV plane (w*h/2) = w*h*1.5
-    size_t dataSize = (size_t)w * h * 3 / 2;
+    // Reset profiling
+    profilingDone = false;
+    profileFrameCount = 0;
+    profileTotalUs = 0;
+    QueryPerformanceFrequency(&perfFreq);
+    
+    size_t dataSize = (size_t)w * h * 4;
     size_t totalSize = sizeof(FrameSharingHeader) + dataSize;
     
     hMap = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
@@ -33,8 +38,8 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     auto *hdr = static_cast<FrameSharingHeader*>(mem);
     memset(hdr, 0, sizeof(FrameSharingHeader));
     hdr->magic = 0x4B414843;
-    hdr->version = 3;  // Version 3 = NV12 format
-    hdr->format = 1;   // 1 = NV12
+    hdr->version = 2;
+    hdr->format = 0;
     
     hEvent = CreateEventW(nullptr, FALSE, FALSE, L"ChiakiFrameEvent");
     if (!hEvent) {
@@ -43,13 +48,15 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
         CloseHandle(hMap); hMap = nullptr;
         return false;
     }
+    
+    QueryPerformanceCounter(&profileStartTime);
 #else
     qWarning() << "FrameSharing: Only supported on Windows";
     return false;
 #endif
 
     active.store(true);
-    qInfo() << "FrameSharing: Ready! Max:" << w << "x" << h << "NV12 (62% smaller!)";
+    qInfo() << "FrameSharing: Ready!" << w << "x" << h;
     return true;
 }
 
@@ -58,6 +65,12 @@ void FrameSharing::shutdown()
     active.store(false);
     
 #ifdef Q_OS_WIN
+    // Log profiling results if collected
+    if (profileFrameCount > 0 && !profilingDone) {
+        double avgUs = (double)profileTotalUs / profileFrameCount;
+        qInfo() << "FrameSharing: Profiling -" << profileFrameCount << "frames, avg write time:" << avgUs << "us (" << (avgUs/1000.0) << "ms)";
+    }
+    
     if (mem) { UnmapViewOfFile(mem); mem = nullptr; }
     if (hMap) { CloseHandle(hMap); hMap = nullptr; }
     if (hEvent) { CloseHandle(hEvent); hEvent = nullptr; }
@@ -66,7 +79,7 @@ void FrameSharing::shutdown()
     if (swsCtx) { sws_freeContext(swsCtx); swsCtx = nullptr; }
     
     if (frameNumber > 0)
-        qInfo() << "FrameSharing: Sent" << frameNumber << "frames";
+        qInfo() << "FrameSharing: Total sent:" << frameNumber << "frames";
 }
 
 bool FrameSharing::sendFrame(AVFrame *frame)
@@ -77,53 +90,78 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     int fw = frame->width;
     int fh = frame->height;
     
-    if (fw > w || fh > h) {
-        qWarning() << "FrameSharing: Frame" << fw << "x" << fh << "exceeds max" << w << "x" << h;
+    if (fw > w || fh > h)
         return false;
-    }
     
 #ifdef Q_OS_WIN
     auto *hdr = static_cast<FrameSharingHeader*>(mem);
     uint8_t *dst = static_cast<uint8_t*>(mem) + sizeof(FrameSharingHeader);
     
-    // Convert to NV12 (much smaller than BGRA!)
     swsCtx = sws_getCachedContext(swsCtx,
         fw, fh, (AVPixelFormat)frame->format,
-        fw, fh, AV_PIX_FMT_NV12,
+        fw, fh, AV_PIX_FMT_BGRA,
         SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
     
     if (!swsCtx) return false;
     
-    // NV12 layout: Y plane followed by interleaved UV plane
-    int ySize = fw * fh;
-    int uvSize = fw * fh / 2;
+    int stride = fw * 4;
+    uint8_t *dstSlice[4] = { dst, nullptr, nullptr, nullptr };
+    int dstStride[4] = { stride, 0, 0, 0 };
     
-    uint8_t *dstSlice[4] = { dst, dst + ySize, nullptr, nullptr };
-    int dstStride[4] = { fw, fw, 0, 0 };
+    // Profile write time for first 10 seconds only
+    LARGE_INTEGER t1, t2;
+    bool shouldProfile = !profilingDone;
+    if (shouldProfile) QueryPerformanceCounter(&t1);
     
     if (sws_scale(swsCtx, frame->data, frame->linesize, 0, fh,
                   dstSlice, dstStride) != fh)
         return false;
     
-    // Update header
+    if (shouldProfile) {
+        QueryPerformanceCounter(&t2);
+        profileTotalUs += ((t2.QuadPart - t1.QuadPart) * 1000000) / perfFreq.QuadPart;
+        profileFrameCount++;
+        
+        // Check if 10 seconds passed
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        double elapsedSec = (double)(now.QuadPart - profileStartTime.QuadPart) / perfFreq.QuadPart;
+        
+        if (elapsedSec >= 10.0) {
+            double avgUs = (double)profileTotalUs / profileFrameCount;
+            double avgMs = avgUs / 1000.0;
+            int dataSize = stride * fh;
+            double mbps = (dataSize / 1024.0 / 1024.0) / (avgMs / 1000.0);
+            
+            qInfo() << "=== FrameSharing Profiling (10s) ===";
+            qInfo() << "  Resolution:" << fw << "x" << fh;
+            qInfo() << "  Frames:" << profileFrameCount;
+            qInfo() << "  Avg write:" << avgMs << "ms (" << avgUs << "us)";
+            qInfo() << "  Speed:" << mbps << "MB/s";
+            qInfo() << "  Frame size:" << (dataSize/1024) << "KB";
+            qInfo() << "====================================";
+            
+            profilingDone = true;
+        }
+    }
+    
     frameNumber++;
     hdr->width = fw;
     hdr->height = fh;
-    hdr->stride = fw;  // Y stride
-    hdr->dataSize = ySize + uvSize;
+    hdr->stride = stride;
+    hdr->dataSize = stride * fh;
     hdr->frameNumber = frameNumber;
     hdr->timestamp = GetTickCount64();
     
     MemoryBarrier();
     hdr->ready = 1;
-    
     SetEvent(hEvent);
     
+    // Log resolution change only
     static int lastW = 0, lastH = 0;
-    if (frameNumber == 1 || fw != lastW || fh != lastH) {
-        qInfo() << "FrameSharing: Streaming" << fw << "x" << fh << "NV12 (" << (ySize + uvSize) / 1024 << "KB)";
-        lastW = fw;
-        lastH = fh;
+    if (fw != lastW || fh != lastH) {
+        qInfo() << "FrameSharing:" << fw << "x" << fh;
+        lastW = fw; lastH = fh;
     }
     
     return true;
