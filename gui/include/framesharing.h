@@ -16,7 +16,6 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
-#include <libavutil/hwcontext.h>
 #include <libswscale/swscale.h>
 }
 
@@ -24,35 +23,19 @@ extern "C" {
 #include <windows.h>
 #endif
 
-// Configuration for 720p @ 60fps optimized
-#define FRAME_SHARING_RING_BUFFER_SIZE 3    // Triple buffer for smooth streaming
-#define FRAME_SHARING_MAX_WIDTH 1280
-#define FRAME_SHARING_MAX_HEIGHT 720
-
 // Frame header structure - shared between C++ and C#
-// Version 2: Added ring buffer support
 #pragma pack(push, 1)
 struct FrameSharingHeader {
-    uint32_t magic;              // Magic number: 0x4B414843 ("CHAK")
-    uint32_t version;            // Protocol version: 2
-    uint32_t width;              // Frame width in pixels
-    uint32_t height;             // Frame height in pixels
-    uint32_t stride;             // Bytes per row
-    uint32_t format;             // Pixel format: 0=BGRA32
-    uint32_t frameDataSize;      // Size of ONE frame in bytes
-    uint32_t ringBufferSize;     // Number of frames in ring buffer (3)
-    uint32_t ringBufferFrameOffset; // Offset to frame data area
-    
-    // Ring buffer control (atomic operations)
-    volatile uint32_t writeIndex;    // Producer writes here (0, 1, 2, 0, 1, 2...)
-    volatile uint32_t readIndex;     // Consumer reads here
-    volatile uint64_t totalFrames;   // Total frames written
-    volatile uint64_t timestamp;     // Latest frame timestamp (ms since epoch)
-    
-    // Per-frame ready flags
-    volatile uint32_t frameReady[FRAME_SHARING_RING_BUFFER_SIZE];
-    volatile uint64_t frameTimestamp[FRAME_SHARING_RING_BUFFER_SIZE];
-    volatile uint64_t frameNumber[FRAME_SHARING_RING_BUFFER_SIZE];
+    uint32_t magic;          // Magic number to verify valid data: 0x4B414843 ("CHAK")
+    uint32_t version;        // Protocol version: 1
+    uint32_t width;          // Frame width in pixels
+    uint32_t height;         // Frame height in pixels
+    uint32_t stride;         // Bytes per row (may include padding)
+    uint32_t format;         // Pixel format: 0=BGRA32
+    uint64_t timestamp;      // Frame timestamp (milliseconds since epoch)
+    uint64_t frameNumber;    // Sequential frame number
+    uint32_t dataSize;       // Size of frame data in bytes
+    uint32_t ready;          // 1 = new frame ready, 0 = frame consumed
 };
 #pragma pack(pop)
 
@@ -82,12 +65,14 @@ public:
     static FrameSharing& instance();
     
     // Initialize frame sharing - call when stream starts
+    // Returns true on success, false on failure (check log for details)
     bool initialize(int width, int height);
     
     // Shutdown frame sharing - call when stream ends
     void shutdown();
     
-    // Send a frame to the shared memory (supports both HW and SW frames)
+    // Send a frame to the shared memory
+    // Returns true on success, false on failure (never crashes, just logs and returns)
     bool sendFrame(AVFrame *frame);
     
     // Check if frame sharing is active
@@ -105,13 +90,10 @@ private:
     FrameSharing(const FrameSharing&) = delete;
     FrameSharing& operator=(const FrameSharing&) = delete;
     
-    // Transfer hardware frame to software frame
-    bool transferHardwareFrame(AVFrame *hwFrame, AVFrame *swFrame);
-    
     // Convert frame to BGRA format
-    bool convertFrameToBGRA(AVFrame *srcFrame, uint8_t *dstBuffer);
+    bool convertFrameToBGRA(AVFrame *srcFrame);
     
-    // Check if frame is hardware-accelerated
+    // Check if frame is hardware-accelerated (Vulkan, VAAPI, etc.)
     bool isHardwareFrame(AVFrame *frame);
     
     // Get pixel format name for logging
@@ -120,17 +102,14 @@ private:
     // Clean up resources safely
     void cleanup();
     
-    // Get pointer to frame data in ring buffer
-    uint8_t* getFrameSlot(int index);
-    
     std::atomic<bool> active;
     std::atomic<bool> initialized;
     int frameWidth;
     int frameHeight;
     uint64_t frameCounter;
     uint64_t successFrameCounter;
-    uint64_t hwFrameCounter;
     int lastErrorFormat;
+    uint64_t hwFrameSkipCount;
     
     QMutex sendMutex;
     
@@ -139,16 +118,13 @@ private:
     HANDLE hEvent;
     void *mappedMemory;
     FrameSharingHeader *header;
-    uint8_t *frameDataArea;
+    uint8_t *frameData;
     size_t totalMappedSize;
-    size_t singleFrameSize;
 #endif
 
-    // For hardware frame transfer
-    AVFrame *swFrame;
-    
-    // For format conversion
     SwsContext *swsContext;
+    uint8_t *bgraBuffer;
+    int bgraBufferSize;
 };
 
 // Macro for safe frame sharing - use this in presentFrame
@@ -166,3 +142,4 @@ private:
     } while(0)
 
 #endif // CHIAKI_FRAMESHARING_H
+
