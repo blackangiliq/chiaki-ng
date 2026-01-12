@@ -396,7 +396,7 @@ QString FrameSharing::getPixelFormatName(int format)
     return QString("unknown(%1)").arg(format);
 }
 
-bool FrameSharing::convertFrameToBGRA(AVFrame *srcFrame)
+bool FrameSharing::convertFrameToBGRA(AVFrame *srcFrame, uint8_t *destBuffer)
 {
     if (srcFrame == nullptr) {
         FrameSharingLogger::instance().logError("convertFrameToBGRA: srcFrame is null");
@@ -423,12 +423,12 @@ bool FrameSharing::convertFrameToBGRA(AVFrame *srcFrame)
         return false;
     }
     
-    // Get or create sws context
+    // Get or create sws context - use FAST_BILINEAR for speed
     swsContext = sws_getCachedContext(
         swsContext,
         srcFrame->width, srcFrame->height, static_cast<AVPixelFormat>(srcFrame->format),
         frameWidth, frameHeight, AV_PIX_FMT_BGRA,
-        SWS_BILINEAR, nullptr, nullptr, nullptr
+        SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
     );
     
     if (swsContext == nullptr) {
@@ -448,11 +448,11 @@ bool FrameSharing::convertFrameToBGRA(AVFrame *srcFrame)
         lastErrorFormat = -1;
     }
     
-    // Set up destination
-    uint8_t *dstData[4] = { bgraBuffer, nullptr, nullptr, nullptr };
+    // Write DIRECTLY to destination (shared memory) - no intermediate copy!
+    uint8_t *dstData[4] = { destBuffer, nullptr, nullptr, nullptr };
     int dstLinesize[4] = { frameWidth * 4, 0, 0, 0 };
     
-    // Convert
+    // Convert directly to shared memory
     int result = sws_scale(
         swsContext,
         srcFrame->data, srcFrame->linesize,
@@ -506,21 +506,11 @@ bool FrameSharing::sendFrame(AVFrame *frame)
         return false;
     }
     
-    // Convert frame to BGRA
-    if (!convertFrameToBGRA(frame)) {
+    // Convert frame DIRECTLY to shared memory (zero-copy to shared mem!)
+    if (!convertFrameToBGRA(frame, frameData)) {
         // Error already logged (or it's a hardware frame which is expected to fail)
         return false;
     }
-    
-    // Copy to shared memory
-    size_t copySize = (size_t)frameWidth * frameHeight * 4;
-    if (copySize > header->dataSize) {
-        FrameSharingLogger::instance().logError(
-            QString("Frame size %1 exceeds allocated size %2").arg(copySize).arg(header->dataSize));
-        return false;
-    }
-    
-    memcpy(frameData, bgraBuffer, copySize);
     
     // Update header
     successFrameCounter++;

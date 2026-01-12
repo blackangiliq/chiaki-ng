@@ -90,8 +90,8 @@ private:
     FrameSharing(const FrameSharing&) = delete;
     FrameSharing& operator=(const FrameSharing&) = delete;
     
-    // Convert frame to BGRA format
-    bool convertFrameToBGRA(AVFrame *srcFrame);
+    // Convert frame DIRECTLY to BGRA in destination buffer (zero-copy)
+    bool convertFrameToBGRA(AVFrame *srcFrame, uint8_t *destBuffer);
     
     // Check if frame is hardware-accelerated (Vulkan, VAAPI, etc.)
     bool isHardwareFrame(AVFrame *frame);
