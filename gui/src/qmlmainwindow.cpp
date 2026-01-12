@@ -328,66 +328,29 @@ void QmlMainWindow::presentFrame(AVFrame *frame, int32_t frames_lost)
     }
 
     // Share frame to external applications via shared memory
-    // Handle hardware frames (Vulkan, VAAPI, etc.) by transferring to software
     if (frame && FrameSharing::instance().isActive()) {
-        try {
-            AVFrame *shareFrame = frame;
-            AVFrame *swFrame = nullptr;
-            static bool hwTransferLogged = false;
-            static bool swFrameLogged = false;
-            
-            // Check if this is a hardware frame that needs transfer
-            if (frame->hw_frames_ctx) {
-                if (!hwTransferLogged) {
-                    FrameSharingLogger::instance().logInfo(
-                        QString("[HW->SW] Detected hardware frame (format=%1), transferring to software...")
-                        .arg(frame->format));
-                    hwTransferLogged = true;
-                }
-                
-                swFrame = av_frame_alloc();
-                if (swFrame) {
-                    if (av_hwframe_transfer_data(swFrame, frame, 0) >= 0) {
-                        av_frame_copy_props(swFrame, frame);
-                        shareFrame = swFrame;
-                        
-                        if (!swFrameLogged) {
-                            FrameSharingLogger::instance().logInfo(
-                                QString("[HW->SW] Transfer successful! SW format=%1, size=%2x%3")
-                                .arg(swFrame->format).arg(swFrame->width).arg(swFrame->height));
-                            swFrameLogged = true;
-                        }
-                    } else {
-                        static bool transferFailLogged = false;
-                        if (!transferFailLogged) {
-                            FrameSharingLogger::instance().logError(
-                                "[HW->SW] Failed to transfer hardware frame to software!");
-                            transferFailLogged = true;
-                        }
-                        av_frame_free(&swFrame);
-                        swFrame = nullptr;
-                    }
-                }
+        AVFrame *shareFrame = frame;
+        AVFrame *swFrame = nullptr;
+        
+        // Hardware frame? Transfer to software first
+        if (frame->hw_frames_ctx) {
+            swFrame = av_frame_alloc();
+            if (swFrame && av_hwframe_transfer_data(swFrame, frame, 0) >= 0) {
+                av_frame_copy_props(swFrame, frame);
+                shareFrame = swFrame;
+            } else {
+                if (swFrame) av_frame_free(&swFrame);
+                swFrame = nullptr;
             }
-            
-            // Send frame (either original software frame or transferred frame)
-            if (shareFrame && shareFrame->data[0]) {
-                FrameSharing::instance().sendFrame(shareFrame);
-            }
-            
-            // Clean up transferred frame
-            if (swFrame) {
-                av_frame_free(&swFrame);
-            }
-        } catch (const std::exception& e) {
-            static bool exceptionLogged = false;
-            if (!exceptionLogged) {
-                FrameSharingLogger::instance().logError(QString("Exception in frame sharing: %1").arg(e.what()));
-                exceptionLogged = true;
-            }
-        } catch (...) {
-            // Silently ignore unknown errors
         }
+        
+        // Send frame
+        if (shareFrame && shareFrame->data[0]) {
+            FrameSharing::instance().sendFrame(shareFrame);
+        }
+        
+        // Cleanup
+        if (swFrame) av_frame_free(&swFrame);
     }
 
     update();

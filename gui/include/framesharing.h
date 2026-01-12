@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
+// Simple & Fast Frame Sharing - v2.0
 
 #ifndef CHIAKI_FRAMESHARING_H
 #define CHIAKI_FRAMESHARING_H
 
-#include <QObject>
-#include <QString>
 #include <QMutex>
-#include <QFile>
-#include <QTextStream>
-#include <QDateTime>
-#include <QStandardPaths>
-#include <QDir>
+#include <QDebug>
 #include <atomic>
 
 extern "C" {
@@ -23,123 +18,56 @@ extern "C" {
 #include <windows.h>
 #endif
 
-// Frame header structure - shared between C++ and C#
+// Shared header - keep in sync with C# client
 #pragma pack(push, 1)
 struct FrameSharingHeader {
-    uint32_t magic;          // Magic number to verify valid data: 0x4B414843 ("CHAK")
-    uint32_t version;        // Protocol version: 1
-    uint32_t width;          // Frame width in pixels
-    uint32_t height;         // Frame height in pixels
-    uint32_t stride;         // Bytes per row (may include padding)
-    uint32_t format;         // Pixel format: 0=BGRA32
-    uint64_t timestamp;      // Frame timestamp (milliseconds since epoch)
-    uint64_t frameNumber;    // Sequential frame number
-    uint32_t dataSize;       // Size of frame data in bytes
-    uint32_t ready;          // 1 = new frame ready, 0 = frame consumed
+    uint32_t magic;          // 0x4B414843 ("CHAK")
+    uint32_t version;        // 2
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride;         // width * 4 (BGRA)
+    uint32_t format;         // 0 = BGRA32
+    uint64_t timestamp;
+    uint64_t frameNumber;
+    uint32_t dataSize;
+    volatile uint32_t ready; // 1 = new frame, 0 = consumed
 };
 #pragma pack(pop)
 
-class FrameSharingLogger {
-public:
-    static FrameSharingLogger& instance();
-    void log(const QString& level, const QString& message);
-    void logError(const QString& message) { log("ERROR", message); }
-    void logWarning(const QString& message) { log("WARN", message); }
-    void logInfo(const QString& message) { log("INFO", message); }
-    void logDebug(const QString& message) { log("DEBUG", message); }
-    QString getLogFilePath() const { return logFilePath; }
-
-private:
-    FrameSharingLogger();
-    ~FrameSharingLogger();
-    QMutex mutex;
-    QFile logFile;
-    QString logFilePath;
-};
-
-class FrameSharing : public QObject
+class FrameSharing
 {
-    Q_OBJECT
-
 public:
-    static FrameSharing& instance();
+    static FrameSharing& instance() {
+        static FrameSharing inst;
+        return inst;
+    }
     
-    // Initialize frame sharing - call when stream starts
-    // Returns true on success, false on failure (check log for details)
     bool initialize(int width, int height);
-    
-    // Shutdown frame sharing - call when stream ends
     void shutdown();
-    
-    // Send a frame to the shared memory
-    // Returns true on success, false on failure (never crashes, just logs and returns)
     bool sendFrame(AVFrame *frame);
-    
-    // Check if frame sharing is active
     bool isActive() const { return active.load(); }
-    
-    // Get the shared memory name for C# client
-    static QString getSharedMemoryName() { return "ChiakiFrameShare"; }
-    static QString getEventName() { return "ChiakiFrameEvent"; }
 
 private:
-    FrameSharing();
-    ~FrameSharing();
-    
-    // Disable copy
-    FrameSharing(const FrameSharing&) = delete;
-    FrameSharing& operator=(const FrameSharing&) = delete;
-    
-    // Convert frame DIRECTLY to BGRA in destination buffer (zero-copy)
-    bool convertFrameToBGRA(AVFrame *srcFrame, uint8_t *destBuffer);
-    
-    // Check if frame is hardware-accelerated (Vulkan, VAAPI, etc.)
-    bool isHardwareFrame(AVFrame *frame);
-    
-    // Get pixel format name for logging
-    QString getPixelFormatName(int format);
-    
-    // Clean up resources safely
-    void cleanup();
+    FrameSharing() : active(false), frameNumber(0), swsCtx(nullptr)
+#ifdef Q_OS_WIN
+        , hMap(nullptr), hEvent(nullptr), mem(nullptr)
+#endif
+    {}
+    ~FrameSharing() { shutdown(); }
     
     std::atomic<bool> active;
-    std::atomic<bool> initialized;
-    int frameWidth;
-    int frameHeight;
-    uint64_t frameCounter;
-    uint64_t successFrameCounter;
-    int lastErrorFormat;
-    uint64_t hwFrameSkipCount;
-    
-    QMutex sendMutex;
+    uint64_t frameNumber;
+    int w, h;
+    QMutex mutex;
+    SwsContext *swsCtx;
     
 #ifdef Q_OS_WIN
-    HANDLE hMapFile;
-    HANDLE hEvent;
-    void *mappedMemory;
-    FrameSharingHeader *header;
-    uint8_t *frameData;
-    size_t totalMappedSize;
+    HANDLE hMap, hEvent;
+    void *mem;
 #endif
-
-    SwsContext *swsContext;
-    uint8_t *bgraBuffer;
-    int bgraBufferSize;
 };
 
-// Macro for safe frame sharing - use this in presentFrame
-#define SAFE_SHARE_FRAME(frame) \
-    do { \
-        try { \
-            if (FrameSharing::instance().isActive()) { \
-                FrameSharing::instance().sendFrame(frame); \
-            } \
-        } catch (const std::exception& e) { \
-            FrameSharingLogger::instance().logError(QString("Exception in frame sharing: %1").arg(e.what())); \
-        } catch (...) { \
-            FrameSharingLogger::instance().logError("Unknown exception in frame sharing"); \
-        } \
-    } while(0)
+// Simple macro for use in render code
+#define SHARE_FRAME(f) do { if(FrameSharing::instance().isActive()) FrameSharing::instance().sendFrame(f); } while(0)
 
 #endif // CHIAKI_FRAMESHARING_H
-
