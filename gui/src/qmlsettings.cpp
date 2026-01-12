@@ -81,6 +81,28 @@ void QmlSettings::setStreamerMode(bool enabled)
     emit streamerModeChanged();
 }
 
+bool QmlSettings::frameSharingEnabled() const
+{
+    return settings->GetFrameSharingEnabled();
+}
+
+void QmlSettings::setFrameSharingEnabled(bool enabled)
+{
+    settings->SetFrameSharingEnabled(enabled);
+    emit frameSharingEnabledChanged();
+}
+
+bool QmlSettings::localRenderDisabled() const
+{
+    return settings->GetLocalRenderDisabled();
+}
+
+void QmlSettings::setLocalRenderDisabled(bool disabled)
+{
+    settings->SetLocalRenderDisabled(disabled);
+    emit localRenderDisabledChanged();
+}
+
 float QmlSettings::hapticOverride() const
 {
     return settings->GetHapticOverride();

@@ -319,15 +319,15 @@ void QmlMainWindow::presentFrame(AVFrame *frame, int32_t frames_lost)
             setCursor(Qt::BlankCursor);
         emit hasVideoChanged();
         
-        // Initialize frame sharing once with max resolution (1080p)
-        // Actual frame size is written in header, C# reads it dynamically
-        if (!FrameSharing::instance().isActive()) {
-            FrameSharing::instance().initialize(1920, 1080); // Max buffer size
+        // Initialize frame sharing if enabled
+        if (settings->GetFrameSharingEnabled() && !FrameSharing::instance().isActive()) {
+            FrameSharing::instance().initialize(1920, 1080); // Max buffer size for 1080p
         }
     }
 
-    // Share frame to external applications via shared memory
-    if (frame && FrameSharing::instance().isActive()) {
+    // Share frame to external applications via shared memory (if enabled)
+    // Uses async queue - returns immediately, zero impact on Chiaki performance
+    if (frame && settings->GetFrameSharingEnabled() && FrameSharing::instance().isActive()) {
         AVFrame *shareFrame = frame;
         AVFrame *swFrame = nullptr;
         
@@ -343,16 +343,19 @@ void QmlMainWindow::presentFrame(AVFrame *frame, int32_t frames_lost)
             }
         }
         
-        // Send frame
+        // Queue frame for async processing (non-blocking)
         if (shareFrame && shareFrame->data[0]) {
-            FrameSharing::instance().sendFrame(shareFrame);
+            FrameSharing::instance().queueFrame(shareFrame);
         }
         
         // Cleanup
         if (swFrame) av_frame_free(&swFrame);
     }
 
-    update();
+    // Only update local render if not disabled
+    if (!settings->GetLocalRenderDisabled()) {
+        update();
+    }
 }
 
 AVBufferRef *QmlMainWindow::vulkanHwDeviceCtx()

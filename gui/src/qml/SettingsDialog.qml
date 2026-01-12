@@ -460,6 +460,34 @@ DialogView {
 
                         Label {
                             Layout.alignment: Qt.AlignRight
+                            text: qsTr("Frame Sharing (for Chiki)")
+                        }
+                        C.CheckBox {
+                            checked: Chiaki.settings.frameSharingEnabled
+                            onToggled: Chiaki.settings.frameSharingEnabled = !Chiaki.settings.frameSharingEnabled
+                        }
+
+                        Label {
+                            Layout.alignment: Qt.AlignRight
+                            text: qsTr("(Checked = Share frames)")
+                        }
+
+                        Label {
+                            Layout.alignment: Qt.AlignRight
+                            text: qsTr("Disable Local Render")
+                        }
+                        C.CheckBox {
+                            checked: Chiaki.settings.localRenderDisabled
+                            onToggled: Chiaki.settings.localRenderDisabled = !Chiaki.settings.localRenderDisabled
+                        }
+
+                        Label {
+                            Layout.alignment: Qt.AlignRight
+                            text: qsTr("(For Chiki-only mode)")
+                        }
+
+                        Label {
+                            Layout.alignment: Qt.AlignRight
                             text: qsTr("Stream Menu Shortcut Enabled")
                         }
                         C.CheckBox {

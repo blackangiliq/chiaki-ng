@@ -251,6 +251,13 @@ class Settings : public QObject
 		bool GetStreamerMode() const		{ return settings.value("settings/streamer_mode", false).toBool(); }
 		void SetStreamerMode(bool enabled)	{ settings.setValue("settings/streamer_mode", enabled); }
 
+		// Frame Sharing Settings (for external applications like Chiki)
+		bool GetFrameSharingEnabled() const      { return settings.value("settings/frame_sharing_enabled", true).toBool(); }
+		void SetFrameSharingEnabled(bool enabled) { settings.setValue("settings/frame_sharing_enabled", enabled); }
+
+		bool GetLocalRenderDisabled() const      { return settings.value("settings/local_render_disabled", false).toBool(); }
+		void SetLocalRenderDisabled(bool disabled) { settings.setValue("settings/local_render_disabled", disabled); }
+
 		bool GetButtonsByPosition() const 		{ return settings.value("settings/buttons_by_pos", false).toBool(); }
 		void SetButtonsByPosition(bool enabled) { settings.setValue("settings/buttons_by_pos", enabled); }
 
