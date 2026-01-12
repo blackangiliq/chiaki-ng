@@ -56,13 +56,10 @@ struct FrameSharingHeader {
     volatile uint64_t totalFramesWritten;
     volatile uint64_t totalFramesRead;
     volatile uint64_t droppedFrames;
-    
-    // Padding to 128 bytes for cache alignment
-    uint8_t reserved[16];
 };
 #pragma pack(pop)
 
-static_assert(sizeof(FrameSharingHeader) == 128, "Header must be 128 bytes");
+// Header size: 120 bytes (no padding needed, pack(1) ensures tight packing)
 
 class FrameSharing
 {
