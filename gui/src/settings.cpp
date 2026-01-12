@@ -354,9 +354,9 @@ static const QMap<ChiakiVideoResolutionPreset, QString> resolutions = {
 	{ CHIAKI_VIDEO_RESOLUTION_PRESET_1080p, "1080p" }
 };
 
-static const ChiakiVideoResolutionPreset resolution_default_ps4 = CHIAKI_VIDEO_RESOLUTION_PRESET_720p;
+static const ChiakiVideoResolutionPreset resolution_default_ps4 = CHIAKI_VIDEO_RESOLUTION_PRESET_1080p;
 static const ChiakiVideoResolutionPreset resolution_default_ps5_local = CHIAKI_VIDEO_RESOLUTION_PRESET_1080p;
-static const ChiakiVideoResolutionPreset resolution_default_ps5_remote = CHIAKI_VIDEO_RESOLUTION_PRESET_720p;
+static const ChiakiVideoResolutionPreset resolution_default_ps5_remote = CHIAKI_VIDEO_RESOLUTION_PRESET_1080p;
 
 ChiakiVideoResolutionPreset Settings::GetResolutionLocalPS4() const
 {
@@ -465,12 +465,12 @@ unsigned int Settings::GetBitrateRemotePS4() const
 
 unsigned int Settings::GetBitrateLocalPS5() const
 {
-	return settings.value("settings/bitrate_local_ps5", 0).toUInt();
+	return settings.value("settings/bitrate_local_ps5", 88000).toUInt();
 }
 
 unsigned int Settings::GetBitrateRemotePS5() const
 {
-	return settings.value("settings/bitrate_remote_ps5", 0).toUInt();
+	return settings.value("settings/bitrate_remote_ps5", 86000).toUInt();
 }
 
 void Settings::SetBitrateLocalPS4(unsigned int bitrate)

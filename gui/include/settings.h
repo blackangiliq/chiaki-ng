@@ -245,7 +245,7 @@ class Settings : public QObject
 		RumbleHapticsIntensity GetRumbleHapticsIntensity() const;
 		void SetRumbleHapticsIntensity(RumbleHapticsIntensity intensity);
 
-		bool GetShowStreamStats() const            { return settings.value("settings/show_stream_stats", true).toBool(); }  // Default: enabled
+		bool GetShowStreamStats() const            { return settings.value("settings/show_stream_stats", true).toBool(); }
 		void SetShowStreamStats(bool enabled)      { settings.setValue("settings/show_stream_stats", enabled); }
 
 		bool GetStreamerMode() const		{ return settings.value("settings/streamer_mode", false).toBool(); }
@@ -268,7 +268,7 @@ class Settings : public QObject
 		void SetSteamDeckHapticsEnabled(bool enabled) { settings.setValue("settings/steamdeck_haptics", enabled); }
 #endif
 
-		bool GetAutomaticConnect() const         { return settings.value("settings/automatic_connect", false).toBool(); }
+		bool GetAutomaticConnect() const         { return settings.value("settings/automatic_connect", true).toBool(); }
 		void SetAutomaticConnect(bool autoconnect)    { settings.setValue("settings/automatic_connect", autoconnect); }
 
 		bool GetFullscreenDoubleClickEnabled() const	   { return settings.value("settings/fullscreen_doubleclick", false).toBool(); }
