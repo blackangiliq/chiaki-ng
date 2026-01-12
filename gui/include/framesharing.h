@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
-// Simple & Fast Frame Sharing - v3.0 (Raw NV12 - No Conversion)
+// Simple & Fast Frame Sharing - v2.3
 
 #ifndef CHIAKI_FRAMESHARING_H
 #define CHIAKI_FRAMESHARING_H
 
 #include <atomic>
-#include <cstdint>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
 }
 
 #ifdef _WIN32
@@ -17,15 +18,15 @@ extern "C" {
 
 #pragma pack(push, 1)
 struct FrameSharingHeader {
-    uint32_t magic;       // 0x4B414843 "CHAK"
-    uint32_t version;     // 3 = Raw NV12
+    uint32_t magic;
+    uint32_t version;
     uint32_t width;
     uint32_t height;
-    uint32_t stride;      // Y plane stride
-    uint32_t format;      // 1 = NV12
+    uint32_t stride;
+    uint32_t format;
     uint64_t timestamp;
     uint64_t frameNumber;
-    uint32_t dataSize;    // Total: Y + UV
+    uint32_t dataSize;
     volatile uint32_t ready;
 };
 #pragma pack(pop)
@@ -42,22 +43,39 @@ public:
     void shutdown();
     bool sendFrame(AVFrame *frame);
     bool isActive() const { return active.load(); }
+    
+    // Get profiling results (call after 10 seconds)
+    double getAvgWriteTimeUs() const { return profileFrameCount > 0 ? (double)profileTotalUs / profileFrameCount : 0; }
+    uint64_t getProfileFrameCount() const { return profileFrameCount; }
+    bool isProfilingDone() const { return profilingDone; }
 
 private:
-    FrameSharing() : active(false), frameNumber(0)
+    FrameSharing() : active(false), frameNumber(0), swsCtx(nullptr)
 #ifdef _WIN32
         , hMap(nullptr), hEvent(nullptr), mem(nullptr)
+        , profilingDone(false), profileFrameCount(0), profileTotalUs(0)
 #endif
-    {}
+    {
+#ifdef _WIN32
+        perfFreq.QuadPart = 0;
+        profileStartTime.QuadPart = 0;
+#endif
+    }
     ~FrameSharing() { shutdown(); }
     
     std::atomic<bool> active;
     uint64_t frameNumber;
     int w, h;
+    SwsContext *swsCtx;
     
 #ifdef _WIN32
     HANDLE hMap, hEvent;
     void *mem;
+    bool profilingDone;
+    uint64_t profileFrameCount;
+    uint64_t profileTotalUs;
+    LARGE_INTEGER perfFreq;
+    LARGE_INTEGER profileStartTime;
 #endif
 };
 

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
-// Simple & Fast Frame Sharing - v3.0 (Raw NV12 - No Conversion)
+// Simple & Fast Frame Sharing - v2.3
 
 #include "framesharing.h"
-#include <cstring>
 
 bool FrameSharing::initialize(int maxWidth, int maxHeight)
 {
@@ -13,8 +12,12 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     frameNumber = 0;
     
 #ifdef _WIN32
-    // NV12: Y plane (w*h) + UV plane (w*h/2) = 1.5 * w * h
-    size_t dataSize = (size_t)w * h * 3 / 2;
+    profilingDone = false;
+    profileFrameCount = 0;
+    profileTotalUs = 0;
+    QueryPerformanceFrequency(&perfFreq);
+    
+    size_t dataSize = (size_t)w * h * 4;
     size_t totalSize = sizeof(FrameSharingHeader) + dataSize;
     
     hMap = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
@@ -30,8 +33,8 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     auto *hdr = static_cast<FrameSharingHeader*>(mem);
     memset(hdr, 0, sizeof(FrameSharingHeader));
     hdr->magic = 0x4B414843;
-    hdr->version = 3;  // v3 = Raw NV12
-    hdr->format = 1;   // 1 = NV12
+    hdr->version = 2;
+    hdr->format = 0;
     
     hEvent = CreateEventW(nullptr, FALSE, FALSE, L"ChiakiFrameEvent");
     if (!hEvent) {
@@ -39,6 +42,8 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
         CloseHandle(hMap); hMap = nullptr;
         return false;
     }
+    
+    QueryPerformanceCounter(&profileStartTime);
 #else
     return false;
 #endif
@@ -56,6 +61,8 @@ void FrameSharing::shutdown()
     if (hMap) { CloseHandle(hMap); hMap = nullptr; }
     if (hEvent) { CloseHandle(hEvent); hEvent = nullptr; }
 #endif
+    
+    if (swsCtx) { sws_freeContext(swsCtx); swsCtx = nullptr; }
 }
 
 bool FrameSharing::sendFrame(AVFrame *frame)
@@ -73,35 +80,41 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     auto *hdr = static_cast<FrameSharingHeader*>(mem);
     uint8_t *dst = static_cast<uint8_t*>(mem) + sizeof(FrameSharingHeader);
     
-    // Copy Y plane
-    int ySize = fw * fh;
-    if (frame->linesize[0] == fw) {
-        memcpy(dst, frame->data[0], ySize);
-    } else {
-        for (int y = 0; y < fh; y++)
-            memcpy(dst + y * fw, frame->data[0] + y * frame->linesize[0], fw);
-    }
+    swsCtx = sws_getCachedContext(swsCtx,
+        fw, fh, (AVPixelFormat)frame->format,
+        fw, fh, AV_PIX_FMT_BGRA,
+        SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
     
-    // Copy UV plane (NV12: interleaved UV)
-    uint8_t *uvDst = dst + ySize;
-    int uvHeight = fh / 2;
-    int uvWidth = fw;
+    if (!swsCtx) return false;
     
-    if (frame->data[1]) {
-        // NV12 format - UV interleaved
-        if (frame->linesize[1] == uvWidth) {
-            memcpy(uvDst, frame->data[1], uvWidth * uvHeight);
-        } else {
-            for (int y = 0; y < uvHeight; y++)
-                memcpy(uvDst + y * uvWidth, frame->data[1] + y * frame->linesize[1], uvWidth);
-        }
+    int stride = fw * 4;
+    uint8_t *dstSlice[4] = { dst, nullptr, nullptr, nullptr };
+    int dstStride[4] = { stride, 0, 0, 0 };
+    
+    LARGE_INTEGER t1, t2;
+    bool shouldProfile = !profilingDone;
+    if (shouldProfile) QueryPerformanceCounter(&t1);
+    
+    if (sws_scale(swsCtx, frame->data, frame->linesize, 0, fh,
+                  dstSlice, dstStride) != fh)
+        return false;
+    
+    if (shouldProfile) {
+        QueryPerformanceCounter(&t2);
+        profileTotalUs += ((t2.QuadPart - t1.QuadPart) * 1000000) / perfFreq.QuadPart;
+        profileFrameCount++;
+        
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        if ((double)(now.QuadPart - profileStartTime.QuadPart) / perfFreq.QuadPart >= 10.0)
+            profilingDone = true;
     }
     
     frameNumber++;
     hdr->width = fw;
     hdr->height = fh;
-    hdr->stride = fw;  // Y stride
-    hdr->dataSize = ySize + uvWidth * uvHeight;
+    hdr->stride = stride;
+    hdr->dataSize = stride * fh;
     hdr->frameNumber = frameNumber;
     hdr->timestamp = GetTickCount64();
     
