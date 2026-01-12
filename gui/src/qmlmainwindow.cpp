@@ -319,11 +319,10 @@ void QmlMainWindow::presentFrame(AVFrame *frame, int32_t frames_lost)
             setCursor(Qt::BlankCursor);
         emit hasVideoChanged();
         
-        // Initialize frame sharing when video starts (auto-start by default)
-        if (frame && frame->width > 0 && frame->height > 0) {
-            if (!FrameSharing::instance().isActive()) {
-                FrameSharing::instance().initialize(frame->width, frame->height);
-            }
+        // Initialize frame sharing once with max resolution (1080p)
+        // Actual frame size is written in header, C# reads it dynamically
+        if (!FrameSharing::instance().isActive()) {
+            FrameSharing::instance().initialize(1920, 1080); // Max buffer size
         }
     }
 

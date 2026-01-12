@@ -42,9 +42,9 @@ public:
         return inst;
     }
     
-    bool initialize(int width, int height);
+    bool initialize(int maxWidth, int maxHeight); // Allocates buffer for max resolution
     void shutdown();
-    bool sendFrame(AVFrame *frame);
+    bool sendFrame(AVFrame *frame); // Sends frame at its native resolution
     bool isActive() const { return active.load(); }
 
 private:
