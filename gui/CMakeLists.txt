@@ -143,6 +143,9 @@ endif()
 if(APPLE)
 	target_link_libraries(chiaki "-framework AVFoundation" "-framework IOKit")
 endif()
+if(WIN32)
+	target_link_libraries(chiaki d3d11 dxgi)
+endif()
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fanalyzer")
 set_target_properties(chiaki PROPERTIES
