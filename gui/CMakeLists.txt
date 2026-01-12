@@ -46,6 +46,8 @@ set(SOURCE_FILES
 	src/qmlmainwindow.cpp
 	include/qmlbackend.h
 	src/qmlbackend.cpp
+	include/apiserver.h
+	src/apiserver.cpp
 	include/qmlcontroller.h
 	src/qmlcontroller.cpp
 	include/qmlsettings.h
@@ -142,9 +144,6 @@ if(NOT CHIAKI_ENABLE_FFMPEG_DECODER)
 endif()
 if(APPLE)
 	target_link_libraries(chiaki "-framework AVFoundation" "-framework IOKit")
-endif()
-if(WIN32)
-	target_link_libraries(chiaki d3d11 dxgi)
 endif()
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fanalyzer")

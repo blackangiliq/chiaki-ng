@@ -6,6 +6,7 @@
 #include "psnaccountid.h"
 #include "psntoken.h"
 #include "systemdinhibit.h"
+#include "apiserver.h"
 #include "chiaki/remote/holepunch.h"
 #ifdef Q_OS_MACOS
 #include "macWakeSleep.h"
@@ -234,6 +235,15 @@ QmlBackend::QmlBackend(Settings *settings, QmlMainWindow *window)
     connect(windows_wake_sleep, &WindowsWakeSleep::wokeUp, this, &QmlBackend::resumeFromSleep);
     connect(windows_wake_sleep, &WindowsWakeSleep::sleeping, this, &QmlBackend::goToSleep);
 #endif
+
+    // Start API Server on port 5218
+    ApiServer *apiServer = new ApiServer(this, settings, this);
+    if (apiServer->start(5218)) {
+        qCInfo(chiakiGui) << "API Server running on http://127.0.0.1:5218";
+    } else {
+        qCWarning(chiakiGui) << "Failed to start API Server on port 5218";
+    }
+
     refreshPsnToken();
 }
 
