@@ -5,6 +5,9 @@
 #include "qmlbackend.h"
 #include "settings.h"
 #include "discoverymanager.h"
+#include "streamsession.h"
+
+#include <chiaki/session.h>
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -91,7 +94,7 @@ void ApiServer::onReadyRead()
     QString method = parts[0];
     QString path = parts[1];
     
-    // Get Content-Length for POST requests
+    // Get Content-Length for POST/PUT requests
     int contentLength = 0;
     QByteArray headerSection = data.left(headerEnd);
     int clIndex = headerSection.toLower().indexOf("content-length:");
@@ -126,31 +129,72 @@ void ApiServer::onDisconnected()
 
 void ApiServer::handleRequest(QTcpSocket *socket, const QString &method, const QString &path, const QByteArray &body)
 {
-    // Add CORS headers for local development
     qDebug() << "API Request:" << method << path;
     
-    if (method == "GET" && path == "/hosts") {
-        sendJsonResponse(socket, 200, handleGetHosts());
-    }
-    else if (method == "POST" && path == "/register") {
+    // Parse JSON body for POST/PUT requests
+    QJsonObject jsonBody;
+    if (!body.isEmpty() && (method == "POST" || method == "PUT")) {
         QJsonParseError parseError;
         QJsonDocument doc = QJsonDocument::fromJson(body, &parseError);
         if (parseError.error != QJsonParseError::NoError) {
             sendErrorResponse(socket, 400, "Invalid JSON: " + parseError.errorString());
             return;
         }
-        sendJsonResponse(socket, 200, handlePostRegister(doc.object()));
+        jsonBody = doc.object();
     }
-    else if (method == "GET" && path == "/") {
+    
+    // Route requests
+    if (method == "GET" && path == "/") {
         // API info
         QJsonObject info;
         info["name"] = "Remote Controller API";
-        info["version"] = "1.0";
+        info["version"] = "2.0";
         info["endpoints"] = QJsonArray({
             QJsonObject({{"method", "GET"}, {"path", "/hosts"}, {"description", "Get discovered and registered hosts"}}),
-            QJsonObject({{"method", "POST"}, {"path", "/register"}, {"description", "Register a console"}})
+            QJsonObject({{"method", "POST"}, {"path", "/register"}, {"description", "Register a console"}}),
+            QJsonObject({{"method", "POST"}, {"path", "/connect"}, {"description", "Connect to a host"}}),
+            QJsonObject({{"method", "POST"}, {"path", "/disconnect"}, {"description", "Disconnect from current session"}}),
+            QJsonObject({{"method", "POST"}, {"path", "/wakeup"}, {"description", "Wake up a console"}}),
+            QJsonObject({{"method", "GET"}, {"path", "/stream/status"}, {"description", "Get current stream status"}}),
+            QJsonObject({{"method", "GET"}, {"path", "/settings"}, {"description", "Get all settings"}}),
+            QJsonObject({{"method", "PUT"}, {"path", "/settings"}, {"description", "Update settings"}}),
+            QJsonObject({{"method", "GET"}, {"path", "/settings/video"}, {"description", "Get video settings"}}),
+            QJsonObject({{"method", "PUT"}, {"path", "/settings/video"}, {"description", "Update video settings"}})
         });
         sendJsonResponse(socket, 200, QJsonDocument(info));
+    }
+    // Hosts
+    else if (method == "GET" && path == "/hosts") {
+        sendJsonResponse(socket, 200, handleGetHosts());
+    }
+    else if (method == "POST" && path == "/register") {
+        sendJsonResponse(socket, 200, handlePostRegister(jsonBody));
+    }
+    // Stream Control
+    else if (method == "POST" && path == "/connect") {
+        sendJsonResponse(socket, 200, handlePostConnect(jsonBody));
+    }
+    else if (method == "POST" && path == "/disconnect") {
+        sendJsonResponse(socket, 200, handlePostDisconnect());
+    }
+    else if (method == "POST" && path == "/wakeup") {
+        sendJsonResponse(socket, 200, handlePostWakeup(jsonBody));
+    }
+    else if (method == "GET" && path == "/stream/status") {
+        sendJsonResponse(socket, 200, handleGetStreamStatus());
+    }
+    // Settings
+    else if (method == "GET" && path == "/settings") {
+        sendJsonResponse(socket, 200, handleGetSettings());
+    }
+    else if (method == "PUT" && path == "/settings") {
+        sendJsonResponse(socket, 200, handlePutSettings(jsonBody));
+    }
+    else if (method == "GET" && path == "/settings/video") {
+        sendJsonResponse(socket, 200, handleGetVideoSettings());
+    }
+    else if (method == "PUT" && path == "/settings/video") {
+        sendJsonResponse(socket, 200, handlePutVideoSettings(jsonBody));
     }
     else {
         sendErrorResponse(socket, 404, "Not Found");
@@ -175,6 +219,8 @@ void ApiServer::sendJsonResponse(QTcpSocket *socket, int statusCode, const QJson
         "Content-Type: application/json\r\n"
         "Content-Length: %3\r\n"
         "Access-Control-Allow-Origin: *\r\n"
+        "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
+        "Access-Control-Allow-Headers: Content-Type\r\n"
         "Connection: close\r\n"
         "\r\n"
     ).arg(statusCode).arg(statusText).arg(body.size());
@@ -190,20 +236,21 @@ void ApiServer::sendErrorResponse(QTcpSocket *socket, int statusCode, const QStr
     QJsonObject errorObj;
     errorObj["error"] = error;
     errorObj["status"] = statusCode;
+    errorObj["success"] = false;
     sendJsonResponse(socket, statusCode, QJsonDocument(errorObj));
 }
+
+// ==================== Hosts API ====================
 
 QJsonDocument ApiServer::handleGetHosts()
 {
     QJsonArray hostsArray;
     
-    // Get hosts from backend
     QVariantList hostsList = backend->hosts();
     
     for (const QVariant &hostVar : hostsList) {
         QVariantMap host = hostVar.toMap();
         
-        // Only show displayable hosts
         if (!host["display"].toBool())
             continue;
         
@@ -216,7 +263,6 @@ QJsonDocument ApiServer::handleGetHosts()
         hostObj["registered"] = host["registered"].toBool();
         hostObj["discovered"] = host["discovered"].toBool();
         
-        // Add running app info if available
         if (host.contains("app") && !host["app"].toString().isEmpty()) {
             hostObj["runningApp"] = host["app"].toString();
             hostObj["titleId"] = host["titleId"].toString();
@@ -235,21 +281,12 @@ QJsonDocument ApiServer::handleGetHosts()
 
 QJsonDocument ApiServer::handlePostRegister(const QJsonObject &body)
 {
-    // Required fields:
-    // - host: IP address of the console
-    // - psn_id: PSN Account ID (base64) or Online ID for old PS4
-    // - pin: 8-digit Remote Play PIN from console
-    // Optional:
-    // - console_pin: 4-digit console login PIN
-    // - target: console type (ps4_7, ps4_75, ps4_8, ps5) - default: ps5
-    
     QString host = body["host"].toString();
     QString psnId = body["psn_id"].toString();
     QString pin = body["pin"].toString();
     QString consolePin = body["console_pin"].toString();
     QString targetStr = body["target"].toString().toLower();
     
-    // Validate required fields
     if (host.isEmpty()) {
         QJsonObject error;
         error["success"] = false;
@@ -260,7 +297,7 @@ QJsonDocument ApiServer::handlePostRegister(const QJsonObject &body)
     if (psnId.isEmpty()) {
         QJsonObject error;
         error["success"] = false;
-        error["error"] = "Missing required field: psn_id (PSN Account ID in base64)";
+        error["error"] = "Missing required field: psn_id";
         return QJsonDocument(error);
     }
     
@@ -271,47 +308,415 @@ QJsonDocument ApiServer::handlePostRegister(const QJsonObject &body)
         return QJsonDocument(error);
     }
     
-    // Determine target
     int target;
-    if (targetStr == "ps4_7" || targetStr == "ps4_firmware_7")
-        target = 800;  // CHIAKI_TARGET_PS4_7
-    else if (targetStr == "ps4_75" || targetStr == "ps4_firmware_75")
-        target = 900;  // CHIAKI_TARGET_PS4_75
-    else if (targetStr == "ps4_8" || targetStr == "ps4" || targetStr == "ps4_firmware_8")
-        target = 1000; // CHIAKI_TARGET_PS4_8
-    else // default to PS5
-        target = 1000100; // CHIAKI_TARGET_PS5_1
+    if (targetStr == "ps4_7") target = 800;
+    else if (targetStr == "ps4_75") target = 900;
+    else if (targetStr == "ps4_8" || targetStr == "ps4") target = 1000;
+    else target = 1000100; // PS5
     
-    // Use broadcast if host is 255.255.255.255
     bool broadcast = (host == "255.255.255.255");
     
-    // Create a response that will be filled by the callback
     QJsonObject response;
-    response["success"] = false;
-    response["message"] = "Registration started";
-    response["host"] = host;
-    response["target"] = targetStr.isEmpty() ? "ps5" : targetStr;
-    
-    // Note: The actual registration is asynchronous
-    // We call registerHost which returns immediately
-    // The result comes through callbacks
-    
-    bool started = backend->registerHost(
-        host, 
-        psnId, 
-        pin, 
-        consolePin, 
-        broadcast, 
-        target,
-        QJSValue()  // No callback for API
-    );
+    bool started = backend->registerHost(host, psnId, pin, consolePin, broadcast, target, QJSValue());
     
     if (started) {
         response["success"] = true;
-        response["message"] = "Registration process started. Check /hosts to see if console appears as registered.";
+        response["message"] = "Registration process started";
     } else {
-        response["error"] = "Failed to start registration. Check PSN Account ID format (must be base64 encoded).";
+        response["success"] = false;
+        response["error"] = "Failed to start registration";
     }
     
+    return QJsonDocument(response);
+}
+
+// ==================== Stream Control API ====================
+
+QJsonDocument ApiServer::handlePostConnect(const QJsonObject &body)
+{
+    int index = body["index"].toInt(-1);
+    QString nickname = body["nickname"].toString();
+    
+    QJsonObject response;
+    
+    if (index < 0) {
+        // Find by nickname or address
+        QString address = body["address"].toString();
+        QVariantList hostsList = backend->hosts();
+        
+        for (int i = 0; i < hostsList.size(); i++) {
+            QVariantMap host = hostsList[i].toMap();
+            if (host["name"].toString() == nickname || host["address"].toString() == address) {
+                index = i;
+                break;
+            }
+        }
+    }
+    
+    if (index < 0) {
+        response["success"] = false;
+        response["error"] = "Host not found. Provide index, nickname, or address.";
+        return QJsonDocument(response);
+    }
+    
+    backend->connectToHost(index, nickname);
+    
+    response["success"] = true;
+    response["message"] = "Connection initiated";
+    response["index"] = index;
+    
+    return QJsonDocument(response);
+}
+
+QJsonDocument ApiServer::handlePostDisconnect()
+{
+    QJsonObject response;
+    
+    backend->stopSession(false);
+    
+    response["success"] = true;
+    response["message"] = "Disconnect requested";
+    
+    return QJsonDocument(response);
+}
+
+QJsonDocument ApiServer::handlePostWakeup(const QJsonObject &body)
+{
+    int index = body["index"].toInt(-1);
+    QString nickname = body["nickname"].toString();
+    
+    QJsonObject response;
+    
+    if (index < 0) {
+        QString address = body["address"].toString();
+        QVariantList hostsList = backend->hosts();
+        
+        for (int i = 0; i < hostsList.size(); i++) {
+            QVariantMap host = hostsList[i].toMap();
+            if (host["name"].toString() == nickname || host["address"].toString() == address) {
+                index = i;
+                break;
+            }
+        }
+    }
+    
+    if (index < 0) {
+        response["success"] = false;
+        response["error"] = "Host not found";
+        return QJsonDocument(response);
+    }
+    
+    backend->wakeUpHost(index, nickname);
+    
+    response["success"] = true;
+    response["message"] = "Wakeup signal sent";
+    
+    return QJsonDocument(response);
+}
+
+QJsonDocument ApiServer::handleGetStreamStatus()
+{
+    QJsonObject response;
+    
+    StreamSession *session = backend->qmlSession();
+    
+    if (session) {
+        response["streaming"] = true;
+        response["connected"] = session->GetConnected();
+        response["host"] = session->GetHost();
+        response["bitrate"] = session->GetMeasuredBitrate();
+        response["packetLoss"] = session->GetAveragePacketLoss();
+        response["muted"] = session->GetMuted();
+    } else {
+        response["streaming"] = false;
+        response["connected"] = false;
+    }
+    
+    response["success"] = true;
+    
+    return QJsonDocument(response);
+}
+
+// ==================== Settings API ====================
+
+QJsonDocument ApiServer::handleGetSettings()
+{
+    QJsonObject response;
+    response["success"] = true;
+    
+    // General Settings
+    QJsonObject general;
+    general["hardwareDecoder"] = settings->GetHardwareDecoder();
+    general["hideCursor"] = settings->GetHideCursor();
+    
+    // Window Type
+    QString windowType;
+    switch (settings->GetWindowType()) {
+        case WindowType::SelectedResolution: windowType = "selected_resolution"; break;
+        case WindowType::CustomResolution: windowType = "custom_resolution"; break;
+        case WindowType::Fullscreen: windowType = "fullscreen"; break;
+        case WindowType::Zoom: windowType = "zoom"; break;
+        case WindowType::Stretch: windowType = "stretch"; break;
+        default: windowType = "selected_resolution"; break;
+    }
+    general["windowType"] = windowType;
+    
+    // Placebo Preset
+    QString placeboPreset;
+    switch (settings->GetPlaceboPreset()) {
+        case PlaceboPreset::Fast: placeboPreset = "fast"; break;
+        case PlaceboPreset::Default: placeboPreset = "default"; break;
+        case PlaceboPreset::HighQuality: placeboPreset = "high_quality"; break;
+        case PlaceboPreset::Custom: placeboPreset = "custom"; break;
+        default: placeboPreset = "default"; break;
+    }
+    general["placeboPreset"] = placeboPreset;
+    
+    response["general"] = general;
+    
+    // Video Settings - PS5 Local
+    QJsonObject ps5Local;
+    ps5Local["resolution"] = (int)settings->GetResolutionLocalPS5();
+    ps5Local["fps"] = (int)settings->GetFPSLocalPS5();
+    ps5Local["bitrate"] = (int)settings->GetBitrateLocalPS5();
+    ps5Local["codec"] = settings->GetCodecLocalPS5() == CHIAKI_CODEC_H265 ? "h265" : "h264";
+    
+    // Video Settings - PS5 Remote
+    QJsonObject ps5Remote;
+    ps5Remote["resolution"] = (int)settings->GetResolutionRemotePS5();
+    ps5Remote["fps"] = (int)settings->GetFPSRemotePS5();
+    ps5Remote["bitrate"] = (int)settings->GetBitrateRemotePS5();
+    ps5Remote["codec"] = settings->GetCodecRemotePS5() == CHIAKI_CODEC_H265 ? "h265" : "h264";
+    
+    // Video Settings - PS4 Local
+    QJsonObject ps4Local;
+    ps4Local["resolution"] = (int)settings->GetResolutionLocalPS4();
+    ps4Local["fps"] = (int)settings->GetFPSLocalPS4();
+    ps4Local["bitrate"] = (int)settings->GetBitrateLocalPS4();
+    
+    // Video Settings - PS4 Remote
+    QJsonObject ps4Remote;
+    ps4Remote["resolution"] = (int)settings->GetResolutionRemotePS4();
+    ps4Remote["fps"] = (int)settings->GetFPSRemotePS4();
+    ps4Remote["bitrate"] = (int)settings->GetBitrateRemotePS4();
+    
+    QJsonObject video;
+    video["ps5_local"] = ps5Local;
+    video["ps5_remote"] = ps5Remote;
+    video["ps4_local"] = ps4Local;
+    video["ps4_remote"] = ps4Remote;
+    
+    response["video"] = video;
+    
+    return QJsonDocument(response);
+}
+
+QJsonDocument ApiServer::handlePutSettings(const QJsonObject &body)
+{
+    QJsonObject response;
+    response["success"] = true;
+    QJsonArray updated;
+    
+    // General settings
+    if (body.contains("hardwareDecoder")) {
+        settings->SetHardwareDecoder(body["hardwareDecoder"].toString());
+        updated.append("hardwareDecoder");
+    }
+    
+    if (body.contains("hideCursor")) {
+        settings->SetHideCursor(body["hideCursor"].toBool());
+        updated.append("hideCursor");
+    }
+    
+    if (body.contains("windowType")) {
+        QString wt = body["windowType"].toString().toLower();
+        WindowType type = WindowType::SelectedResolution;
+        if (wt == "fullscreen") type = WindowType::Fullscreen;
+        else if (wt == "zoom") type = WindowType::Zoom;
+        else if (wt == "stretch") type = WindowType::Stretch;
+        else if (wt == "custom_resolution") type = WindowType::CustomResolution;
+        settings->SetWindowType(type);
+        updated.append("windowType");
+    }
+    
+    if (body.contains("placeboPreset")) {
+        QString pp = body["placeboPreset"].toString().toLower();
+        PlaceboPreset preset = PlaceboPreset::Default;
+        if (pp == "fast") preset = PlaceboPreset::Fast;
+        else if (pp == "high_quality") preset = PlaceboPreset::HighQuality;
+        else if (pp == "custom") preset = PlaceboPreset::Custom;
+        settings->SetPlaceboPreset(preset);
+        updated.append("placeboPreset");
+    }
+    
+    response["updated"] = updated;
+    return QJsonDocument(response);
+}
+
+QJsonDocument ApiServer::handleGetVideoSettings()
+{
+    QJsonObject response;
+    response["success"] = true;
+    
+    // Resolution mapping
+    auto resolutionToString = [](ChiakiVideoResolutionPreset res) -> QString {
+        switch (res) {
+            case CHIAKI_VIDEO_RESOLUTION_PRESET_360p: return "360p";
+            case CHIAKI_VIDEO_RESOLUTION_PRESET_540p: return "540p";
+            case CHIAKI_VIDEO_RESOLUTION_PRESET_720p: return "720p";
+            case CHIAKI_VIDEO_RESOLUTION_PRESET_1080p: return "1080p";
+            default: return "720p";
+        }
+    };
+    
+    auto fpsToString = [](ChiakiVideoFPSPreset fps) -> QString {
+        switch (fps) {
+            case CHIAKI_VIDEO_FPS_PRESET_30: return "30";
+            case CHIAKI_VIDEO_FPS_PRESET_60: return "60";
+            default: return "60";
+        }
+    };
+    
+    // PS5 Settings
+    QJsonObject ps5;
+    QJsonObject ps5Local;
+    ps5Local["resolution"] = resolutionToString(settings->GetResolutionLocalPS5());
+    ps5Local["fps"] = fpsToString(settings->GetFPSLocalPS5());
+    ps5Local["bitrate"] = (int)settings->GetBitrateLocalPS5();
+    ps5Local["codec"] = settings->GetCodecLocalPS5() == CHIAKI_CODEC_H265 ? "h265" : "h264";
+    
+    QJsonObject ps5Remote;
+    ps5Remote["resolution"] = resolutionToString(settings->GetResolutionRemotePS5());
+    ps5Remote["fps"] = fpsToString(settings->GetFPSRemotePS5());
+    ps5Remote["bitrate"] = (int)settings->GetBitrateRemotePS5();
+    ps5Remote["codec"] = settings->GetCodecRemotePS5() == CHIAKI_CODEC_H265 ? "h265" : "h264";
+    
+    ps5["local"] = ps5Local;
+    ps5["remote"] = ps5Remote;
+    response["ps5"] = ps5;
+    
+    // PS4 Settings
+    QJsonObject ps4;
+    QJsonObject ps4Local;
+    ps4Local["resolution"] = resolutionToString(settings->GetResolutionLocalPS4());
+    ps4Local["fps"] = fpsToString(settings->GetFPSLocalPS4());
+    ps4Local["bitrate"] = (int)settings->GetBitrateLocalPS4();
+    
+    QJsonObject ps4Remote;
+    ps4Remote["resolution"] = resolutionToString(settings->GetResolutionRemotePS4());
+    ps4Remote["fps"] = fpsToString(settings->GetFPSRemotePS4());
+    ps4Remote["bitrate"] = (int)settings->GetBitrateRemotePS4();
+    
+    ps4["local"] = ps4Local;
+    ps4["remote"] = ps4Remote;
+    response["ps4"] = ps4;
+    
+    return QJsonDocument(response);
+}
+
+QJsonDocument ApiServer::handlePutVideoSettings(const QJsonObject &body)
+{
+    QJsonObject response;
+    response["success"] = true;
+    QJsonArray updated;
+    
+    // Helper functions
+    auto stringToResolution = [](const QString &res) -> ChiakiVideoResolutionPreset {
+        if (res == "360p") return CHIAKI_VIDEO_RESOLUTION_PRESET_360p;
+        if (res == "540p") return CHIAKI_VIDEO_RESOLUTION_PRESET_540p;
+        if (res == "720p") return CHIAKI_VIDEO_RESOLUTION_PRESET_720p;
+        if (res == "1080p") return CHIAKI_VIDEO_RESOLUTION_PRESET_1080p;
+        return CHIAKI_VIDEO_RESOLUTION_PRESET_720p;
+    };
+    
+    auto stringToFps = [](const QString &fps) -> ChiakiVideoFPSPreset {
+        if (fps == "30") return CHIAKI_VIDEO_FPS_PRESET_30;
+        if (fps == "60") return CHIAKI_VIDEO_FPS_PRESET_60;
+        return CHIAKI_VIDEO_FPS_PRESET_60;
+    };
+    
+    // PS5 Local Settings
+    if (body.contains("ps5_local")) {
+        QJsonObject ps5Local = body["ps5_local"].toObject();
+        
+        if (ps5Local.contains("resolution")) {
+            settings->SetResolutionLocalPS5(stringToResolution(ps5Local["resolution"].toString()));
+            updated.append("ps5_local.resolution");
+        }
+        if (ps5Local.contains("fps")) {
+            settings->SetFPSLocalPS5(stringToFps(ps5Local["fps"].toString()));
+            updated.append("ps5_local.fps");
+        }
+        if (ps5Local.contains("bitrate")) {
+            settings->SetBitrateLocalPS5(ps5Local["bitrate"].toInt());
+            updated.append("ps5_local.bitrate");
+        }
+        if (ps5Local.contains("codec")) {
+            ChiakiCodec codec = ps5Local["codec"].toString().toLower() == "h265" ? CHIAKI_CODEC_H265 : CHIAKI_CODEC_H264;
+            settings->SetCodecLocalPS5(codec);
+            updated.append("ps5_local.codec");
+        }
+    }
+    
+    // PS5 Remote Settings
+    if (body.contains("ps5_remote")) {
+        QJsonObject ps5Remote = body["ps5_remote"].toObject();
+        
+        if (ps5Remote.contains("resolution")) {
+            settings->SetResolutionRemotePS5(stringToResolution(ps5Remote["resolution"].toString()));
+            updated.append("ps5_remote.resolution");
+        }
+        if (ps5Remote.contains("fps")) {
+            settings->SetFPSRemotePS5(stringToFps(ps5Remote["fps"].toString()));
+            updated.append("ps5_remote.fps");
+        }
+        if (ps5Remote.contains("bitrate")) {
+            settings->SetBitrateRemotePS5(ps5Remote["bitrate"].toInt());
+            updated.append("ps5_remote.bitrate");
+        }
+        if (ps5Remote.contains("codec")) {
+            ChiakiCodec codec = ps5Remote["codec"].toString().toLower() == "h265" ? CHIAKI_CODEC_H265 : CHIAKI_CODEC_H264;
+            settings->SetCodecRemotePS5(codec);
+            updated.append("ps5_remote.codec");
+        }
+    }
+    
+    // PS4 Local Settings
+    if (body.contains("ps4_local")) {
+        QJsonObject ps4Local = body["ps4_local"].toObject();
+        
+        if (ps4Local.contains("resolution")) {
+            settings->SetResolutionLocalPS4(stringToResolution(ps4Local["resolution"].toString()));
+            updated.append("ps4_local.resolution");
+        }
+        if (ps4Local.contains("fps")) {
+            settings->SetFPSLocalPS4(stringToFps(ps4Local["fps"].toString()));
+            updated.append("ps4_local.fps");
+        }
+        if (ps4Local.contains("bitrate")) {
+            settings->SetBitrateLocalPS4(ps4Local["bitrate"].toInt());
+            updated.append("ps4_local.bitrate");
+        }
+    }
+    
+    // PS4 Remote Settings
+    if (body.contains("ps4_remote")) {
+        QJsonObject ps4Remote = body["ps4_remote"].toObject();
+        
+        if (ps4Remote.contains("resolution")) {
+            settings->SetResolutionRemotePS4(stringToResolution(ps4Remote["resolution"].toString()));
+            updated.append("ps4_remote.resolution");
+        }
+        if (ps4Remote.contains("fps")) {
+            settings->SetFPSRemotePS4(stringToFps(ps4Remote["fps"].toString()));
+            updated.append("ps4_remote.fps");
+        }
+        if (ps4Remote.contains("bitrate")) {
+            settings->SetBitrateRemotePS4(ps4Remote["bitrate"].toInt());
+            updated.append("ps4_remote.bitrate");
+        }
+    }
+    
+    response["updated"] = updated;
     return QJsonDocument(response);
 }

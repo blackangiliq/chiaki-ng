@@ -36,9 +36,21 @@ private:
     void sendJsonResponse(QTcpSocket *socket, int statusCode, const QJsonDocument &json);
     void sendErrorResponse(QTcpSocket *socket, int statusCode, const QString &error);
     
-    // API Handlers
+    // API Handlers - Hosts
     QJsonDocument handleGetHosts();
     QJsonDocument handlePostRegister(const QJsonObject &body);
+    
+    // API Handlers - Stream Control
+    QJsonDocument handlePostConnect(const QJsonObject &body);
+    QJsonDocument handlePostDisconnect();
+    QJsonDocument handlePostWakeup(const QJsonObject &body);
+    QJsonDocument handleGetStreamStatus();
+    
+    // API Handlers - Settings
+    QJsonDocument handleGetSettings();
+    QJsonDocument handlePutSettings(const QJsonObject &body);
+    QJsonDocument handleGetVideoSettings();
+    QJsonDocument handlePutVideoSettings(const QJsonObject &body);
 
     QTcpServer *server = nullptr;
     QmlBackend *backend = nullptr;
