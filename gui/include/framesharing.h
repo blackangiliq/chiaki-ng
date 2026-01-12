@@ -5,6 +5,7 @@
 #define CHIAKI_FRAMESHARING_H
 
 #include <atomic>
+#include <cstdint>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -56,9 +57,15 @@ public:
     void updateStats(float bitrateMbps, float packetLoss, uint32_t dropped, uint32_t targetFps, uint32_t actualFps);
     
     // Get profiling results (call after 10 seconds)
+#ifdef Q_OS_WIN
     double getAvgWriteTimeUs() const { return profileFrameCount > 0 ? (double)profileTotalUs / profileFrameCount : 0; }
     uint64_t getProfileFrameCount() const { return profileFrameCount; }
     bool isProfilingDone() const { return profilingDone; }
+#else
+    double getAvgWriteTimeUs() const { return 0; }
+    uint64_t getProfileFrameCount() const { return 0; }
+    bool isProfilingDone() const { return true; }
+#endif
 
 private:
     FrameSharing() : active(false), frameNumber(0), swsCtx(nullptr)

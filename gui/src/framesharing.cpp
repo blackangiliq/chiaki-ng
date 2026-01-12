@@ -44,12 +44,12 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     }
     
     QueryPerformanceCounter(&profileStartTime);
+    
+    active.store(true);
+    return true;
 #else
     return false;
 #endif
-
-    active.store(true);
-    return true;
 }
 
 void FrameSharing::shutdown()
@@ -67,6 +67,7 @@ void FrameSharing::shutdown()
 
 bool FrameSharing::sendFrame(AVFrame *frame)
 {
+#ifdef Q_OS_WIN
     if (!active.load() || !frame || !frame->data[0] || !mem) 
         return false;
     
@@ -76,7 +77,6 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     if (fw > w || fh > h)
         return false;
     
-#ifdef Q_OS_WIN
     auto *hdr = static_cast<FrameSharingHeader*>(mem);
     uint8_t *dst = static_cast<uint8_t*>(mem) + sizeof(FrameSharingHeader);
     
@@ -124,6 +124,7 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     
     return true;
 #else
+    (void)frame;
     return false;
 #endif
 }
@@ -139,5 +140,11 @@ void FrameSharing::updateStats(float bitrateMbps, float packetLoss, uint32_t dro
     hdr->droppedFrames = dropped;
     hdr->targetFps = targetFps;
     hdr->actualFps = actualFps;
+#else
+    (void)bitrateMbps;
+    (void)packetLoss;
+    (void)dropped;
+    (void)targetFps;
+    (void)actualFps;
 #endif
 }
