@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
-// Simple & Fast Frame Sharing - v2.3
+// GPU Texture Sharing - v3.0
 
 #ifndef CHIAKI_FRAMESHARING_H
 #define CHIAKI_FRAMESHARING_H
@@ -9,25 +9,31 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_d3d11va.h>
 #include <libswscale/swscale.h>
 }
 
 #ifdef Q_OS_WIN
 #include <windows.h>
+#include <d3d11.h>
+#include <dxgi1_2.h>
 #endif
 
+// Shared header for CPU fallback mode
 #pragma pack(push, 1)
 struct FrameSharingHeader {
-    uint32_t magic;
-    uint32_t version;
+    uint32_t magic;          // 0x4B414843
+    uint32_t version;        // 3
     uint32_t width;
     uint32_t height;
     uint32_t stride;
-    uint32_t format;
+    uint32_t format;         // 0=BGRA, 1=GPU_TEXTURE
     uint64_t timestamp;
     uint64_t frameNumber;
     uint32_t dataSize;
     volatile uint32_t ready;
+    uint64_t sharedHandle;   // For GPU mode: HANDLE to shared texture
 };
 #pragma pack(pop)
 
@@ -43,34 +49,37 @@ public:
     void shutdown();
     bool sendFrame(AVFrame *frame);
     bool isActive() const { return active.load(); }
+    bool isGpuMode() const { return gpuMode; }
     
-    // Get profiling results (call after 10 seconds)
     double getAvgWriteTimeUs() const { return profileFrameCount > 0 ? (double)profileTotalUs / profileFrameCount : 0; }
     uint64_t getProfileFrameCount() const { return profileFrameCount; }
-    bool isProfilingDone() const { return profilingDone; }
 
 private:
-    FrameSharing() : active(false), frameNumber(0), swsCtx(nullptr)
-#ifdef Q_OS_WIN
-        , hMap(nullptr), hEvent(nullptr), mem(nullptr)
-        , profilingDone(false), profileFrameCount(0), profileTotalUs(0)
-#endif
-    {
-#ifdef Q_OS_WIN
-        perfFreq.QuadPart = 0;
-        profileStartTime.QuadPart = 0;
-#endif
-    }
+    FrameSharing();
     ~FrameSharing() { shutdown(); }
+    
+    bool initD3D11();
+    bool sendFrameGpu(AVFrame *frame);
+    bool sendFrameCpu(AVFrame *frame);
     
     std::atomic<bool> active;
     uint64_t frameNumber;
     int w, h;
     SwsContext *swsCtx;
+    bool gpuMode;
     
 #ifdef Q_OS_WIN
+    // Shared memory (CPU fallback)
     HANDLE hMap, hEvent;
     void *mem;
+    
+    // D3D11 GPU sharing
+    ID3D11Device *d3dDevice;
+    ID3D11DeviceContext *d3dContext;
+    ID3D11Texture2D *sharedTexture;
+    HANDLE sharedHandle;
+    
+    // Profiling
     bool profilingDone;
     uint64_t profileFrameCount;
     uint64_t profileTotalUs;
