@@ -2,27 +2,23 @@
 // GPU Texture Sharing - v3.0
 
 #include "framesharing.h"
-
-#ifdef Q_OS_WIN
-#pragma comment(lib, "d3d11.lib")
-#pragma comment(lib, "dxgi.lib")
-#endif
+#include <cstring>
 
 FrameSharing::FrameSharing() 
-    : active(false), frameNumber(0), swsCtx(nullptr), gpuMode(false)
-#ifdef Q_OS_WIN
+    : active(false), frameNumber(0), w(0), h(0), swsCtx(nullptr), gpuMode(false)
+#ifdef _WIN32
     , hMap(nullptr), hEvent(nullptr), mem(nullptr)
     , d3dDevice(nullptr), d3dContext(nullptr), sharedTexture(nullptr), sharedHandle(nullptr)
     , profilingDone(false), profileFrameCount(0), profileTotalUs(0)
 #endif
 {
-#ifdef Q_OS_WIN
+#ifdef _WIN32
     perfFreq.QuadPart = 0;
     profileStartTime.QuadPart = 0;
 #endif
 }
 
-#ifdef Q_OS_WIN
+#ifdef _WIN32
 bool FrameSharing::initD3D11()
 {
     D3D_FEATURE_LEVEL featureLevel;
@@ -71,90 +67,13 @@ bool FrameSharing::initD3D11()
     
     return true;
 }
-#endif
 
-bool FrameSharing::initialize(int maxWidth, int maxHeight)
-{
-    if (active.load()) shutdown();
-    
-    w = maxWidth;
-    h = maxHeight;
-    frameNumber = 0;
-    gpuMode = false;
-    
-#ifdef Q_OS_WIN
-    profilingDone = false;
-    profileFrameCount = 0;
-    profileTotalUs = 0;
-    QueryPerformanceFrequency(&perfFreq);
-    
-    // Try GPU mode first
-    if (initD3D11()) {
-        gpuMode = true;
-    }
-    
-    // Always create shared memory (for header + CPU fallback)
-    size_t dataSize = (size_t)w * h * 4;
-    size_t totalSize = sizeof(FrameSharingHeader) + dataSize;
-    
-    hMap = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
-                               0, (DWORD)totalSize, L"ChiakiFrameShare");
-    if (!hMap) return false;
-    
-    mem = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, totalSize);
-    if (!mem) {
-        CloseHandle(hMap); hMap = nullptr;
-        return false;
-    }
-    
-    auto *hdr = static_cast<FrameSharingHeader*>(mem);
-    memset(hdr, 0, sizeof(FrameSharingHeader));
-    hdr->magic = 0x4B414843;
-    hdr->version = 3;
-    hdr->format = gpuMode ? 1 : 0; // 1 = GPU texture, 0 = BGRA in memory
-    hdr->sharedHandle = (uint64_t)sharedHandle;
-    
-    hEvent = CreateEventW(nullptr, FALSE, FALSE, L"ChiakiFrameEvent");
-    if (!hEvent) {
-        UnmapViewOfFile(mem); mem = nullptr;
-        CloseHandle(hMap); hMap = nullptr;
-        return false;
-    }
-    
-    QueryPerformanceCounter(&profileStartTime);
-#else
-    return false;
-#endif
-
-    active.store(true);
-    return true;
-}
-
-void FrameSharing::shutdown()
-{
-    active.store(false);
-    
-#ifdef Q_OS_WIN
-    if (sharedTexture) { sharedTexture->Release(); sharedTexture = nullptr; }
-    if (d3dContext) { d3dContext->Release(); d3dContext = nullptr; }
-    if (d3dDevice) { d3dDevice->Release(); d3dDevice = nullptr; }
-    sharedHandle = nullptr;
-    
-    if (mem) { UnmapViewOfFile(mem); mem = nullptr; }
-    if (hMap) { CloseHandle(hMap); hMap = nullptr; }
-    if (hEvent) { CloseHandle(hEvent); hEvent = nullptr; }
-#endif
-    
-    if (swsCtx) { sws_freeContext(swsCtx); swsCtx = nullptr; }
-}
-
-#ifdef Q_OS_WIN
 bool FrameSharing::sendFrameGpu(AVFrame *frame)
 {
     if (!d3dDevice || !sharedTexture) return false;
     
-    // Check if frame is D3D11 hardware frame
-    if (frame->format == AV_PIX_FMT_D3D11) {
+    // Check if frame is D3D11 hardware frame (format 53 = AV_PIX_FMT_D3D11)
+    if (frame->format == 53) {
         // Get D3D11 texture from AVFrame
         ID3D11Texture2D *srcTexture = (ID3D11Texture2D*)frame->data[0];
         int srcIndex = (int)(intptr_t)frame->data[1];
@@ -170,10 +89,6 @@ bool FrameSharing::sendFrameGpu(AVFrame *frame)
     }
     
     // Not a D3D11 frame - fall back to CPU copy to GPU
-    // This is slower but still works
-    D3D11_MAPPED_SUBRESOURCE mapped;
-    
-    // Need staging texture for CPU upload
     D3D11_TEXTURE2D_DESC desc;
     sharedTexture->GetDesc(&desc);
     desc.Usage = D3D11_USAGE_STAGING;
@@ -185,6 +100,7 @@ bool FrameSharing::sendFrameGpu(AVFrame *frame)
     if (FAILED(d3dDevice->CreateTexture2D(&desc, nullptr, &stagingTexture)))
         return false;
     
+    D3D11_MAPPED_SUBRESOURCE mapped;
     if (FAILED(d3dContext->Map(stagingTexture, 0, D3D11_MAP_WRITE, 0, &mapped))) {
         stagingTexture->Release();
         return false;
@@ -247,10 +163,87 @@ bool FrameSharing::sendFrameCpu(AVFrame *frame)
 }
 #endif
 
+bool FrameSharing::initialize(int maxWidth, int maxHeight)
+{
+    if (active.load()) shutdown();
+    
+    w = maxWidth;
+    h = maxHeight;
+    frameNumber = 0;
+    gpuMode = false;
+    
+#ifdef _WIN32
+    profilingDone = false;
+    profileFrameCount = 0;
+    profileTotalUs = 0;
+    QueryPerformanceFrequency(&perfFreq);
+    
+    // Try GPU mode first
+    if (initD3D11()) {
+        gpuMode = true;
+    }
+    
+    // Always create shared memory (for header + CPU fallback)
+    size_t dataSize = (size_t)w * h * 4;
+    size_t totalSize = sizeof(FrameSharingHeader) + dataSize;
+    
+    hMap = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
+                               0, (DWORD)totalSize, L"ChiakiFrameShare");
+    if (!hMap) return false;
+    
+    mem = MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, totalSize);
+    if (!mem) {
+        CloseHandle(hMap); hMap = nullptr;
+        return false;
+    }
+    
+    auto *hdr = static_cast<FrameSharingHeader*>(mem);
+    memset(hdr, 0, sizeof(FrameSharingHeader));
+    hdr->magic = 0x4B414843;
+    hdr->version = 3;
+    hdr->format = gpuMode ? 1 : 0; // 1 = GPU texture, 0 = BGRA in memory
+    hdr->sharedHandle = (uint64_t)(uintptr_t)sharedHandle;
+    
+    hEvent = CreateEventW(nullptr, FALSE, FALSE, L"ChiakiFrameEvent");
+    if (!hEvent) {
+        UnmapViewOfFile(mem); mem = nullptr;
+        CloseHandle(hMap); hMap = nullptr;
+        return false;
+    }
+    
+    QueryPerformanceCounter(&profileStartTime);
+    active.store(true);
+    return true;
+#else
+    return false;
+#endif
+}
+
+void FrameSharing::shutdown()
+{
+    active.store(false);
+    
+#ifdef _WIN32
+    if (sharedTexture) { sharedTexture->Release(); sharedTexture = nullptr; }
+    if (d3dContext) { d3dContext->Release(); d3dContext = nullptr; }
+    if (d3dDevice) { d3dDevice->Release(); d3dDevice = nullptr; }
+    sharedHandle = nullptr;
+    
+    if (mem) { UnmapViewOfFile(mem); mem = nullptr; }
+    if (hMap) { CloseHandle(hMap); hMap = nullptr; }
+    if (hEvent) { CloseHandle(hEvent); hEvent = nullptr; }
+#endif
+    
+    if (swsCtx) { sws_freeContext(swsCtx); swsCtx = nullptr; }
+}
+
 bool FrameSharing::sendFrame(AVFrame *frame)
 {
-    if (!active.load() || !frame || !frame->data[0] || !mem) 
+    if (!active.load() || !frame || !frame->data[0]) 
         return false;
+    
+#ifdef _WIN32
+    if (!mem) return false;
     
     int fw = frame->width;
     int fh = frame->height;
@@ -258,7 +251,6 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     if (fw > w || fh > h)
         return false;
     
-#ifdef Q_OS_WIN
     auto *hdr = static_cast<FrameSharingHeader*>(mem);
     
     LARGE_INTEGER t1, t2;
@@ -296,7 +288,7 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     hdr->height = fh;
     hdr->frameNumber = frameNumber;
     hdr->timestamp = GetTickCount64();
-    hdr->sharedHandle = (uint64_t)sharedHandle;
+    hdr->sharedHandle = (uint64_t)(uintptr_t)sharedHandle;
     
     MemoryBarrier();
     hdr->ready = 1;

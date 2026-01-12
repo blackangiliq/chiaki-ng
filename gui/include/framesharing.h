@@ -5,30 +5,29 @@
 #define CHIAKI_FRAMESHARING_H
 
 #include <atomic>
+#include <cstdint>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
-#include <libavutil/hwcontext.h>
-#include <libavutil/hwcontext_d3d11va.h>
 #include <libswscale/swscale.h>
 }
 
-#ifdef Q_OS_WIN
+#ifdef _WIN32
 #include <windows.h>
 #include <d3d11.h>
-#include <dxgi1_2.h>
+#include <dxgi.h>
 #endif
 
-// Shared header for CPU fallback mode
+// Shared header - keep in sync with C# client
 #pragma pack(push, 1)
 struct FrameSharingHeader {
-    uint32_t magic;          // 0x4B414843
+    uint32_t magic;          // 0x4B414843 ("CHAK")
     uint32_t version;        // 3
     uint32_t width;
     uint32_t height;
     uint32_t stride;
-    uint32_t format;         // 0=BGRA, 1=GPU_TEXTURE
+    uint32_t format;         // 0=BGRA CPU, 1=GPU_TEXTURE
     uint64_t timestamp;
     uint64_t frameNumber;
     uint32_t dataSize;
@@ -58,17 +57,17 @@ private:
     FrameSharing();
     ~FrameSharing() { shutdown(); }
     
-    bool initD3D11();
-    bool sendFrameGpu(AVFrame *frame);
-    bool sendFrameCpu(AVFrame *frame);
-    
     std::atomic<bool> active;
     uint64_t frameNumber;
     int w, h;
     SwsContext *swsCtx;
     bool gpuMode;
     
-#ifdef Q_OS_WIN
+#ifdef _WIN32
+    bool initD3D11();
+    bool sendFrameGpu(AVFrame *frame);
+    bool sendFrameCpu(AVFrame *frame);
+    
     // Shared memory (CPU fallback)
     HANDLE hMap, hEvent;
     void *mem;
@@ -87,5 +86,7 @@ private:
     LARGE_INTEGER profileStartTime;
 #endif
 };
+
+#define SHARE_FRAME(f) do { if(FrameSharing::instance().isActive()) FrameSharing::instance().sendFrame(f); } while(0)
 
 #endif // CHIAKI_FRAMESHARING_H
