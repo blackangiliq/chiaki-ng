@@ -121,6 +121,13 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     // Signal consumer
     if (hEvent) SetEvent(hEvent);
     
+    // Log first frame and stats every 5 seconds (300 frames @ 60fps)
+    if (frameNumber == 1) {
+        qInfo() << "FrameSharing: First frame sent! Format:" << frame->format;
+    } else if (frameNumber % 300 == 0) {
+        qInfo() << "FrameSharing: Sent" << frameNumber << "frames";
+    }
+    
     return true;
 #else
     return false;
