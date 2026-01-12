@@ -403,18 +403,10 @@ bool FrameSharing::convertFrameToBGRA(AVFrame *srcFrame)
         return false;
     }
     
-    // Check for hardware frames - cannot convert directly
+    // Hardware frames are handled in qmlmainwindow.cpp before calling this
+    // If we still get one here, skip it
     if (isHardwareFrame(srcFrame)) {
         hwFrameSkipCount++;
-        // Only log once per format to avoid spam
-        if (lastErrorFormat != srcFrame->format) {
-            lastErrorFormat = srcFrame->format;
-            FrameSharingLogger::instance().logWarning(
-                QString("Hardware frame detected (format: %1 = %2). "
-                        "Frame sharing requires software frames. "
-                        "Consider disabling hardware decoding for frame sharing.")
-                .arg(srcFrame->format).arg(getPixelFormatName(srcFrame->format)));
-        }
         return false;
     }
     
@@ -484,17 +476,8 @@ bool FrameSharing::sendFrame(AVFrame *frame)
         return false;
     }
     
-    // Try to lock, but don't block if another send is in progress
-    if (!sendMutex.tryLock()) {
-        // Skip this frame to avoid blocking the render thread
-        return false;
-    }
-    
-    // Use RAII for mutex unlock
-    struct MutexUnlocker {
-        QMutex& m;
-        ~MutexUnlocker() { m.unlock(); }
-    } unlocker{sendMutex};
+    // Lock mutex - we want all frames, so we wait
+    QMutexLocker locker(&sendMutex);
     
     // Double-check after acquiring lock
     if (!active.load() || !initialized.load()) {
