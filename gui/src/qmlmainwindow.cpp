@@ -326,6 +326,9 @@ void QmlMainWindow::presentFrame(AVFrame *frame, int32_t frames_lost)
         }
     }
 
+    // Count frames for FPS calculation
+    fps_current++;
+    
     // Share frame to external applications via shared memory
     if (frame && FrameSharing::instance().isActive()) {
         AVFrame *shareFrame = frame;
@@ -612,6 +615,18 @@ void QmlMainWindow::init(Settings *settings, bool exit_app_on_stream_exit)
             emit droppedFramesChanged();
         }
         dropped_frames_current = 0;
+        
+        // Update FPS counter
+        fps_counter = fps_current;
+        fps_current = 0;
+        
+        // Update frame sharing stats for external applications
+        if (session && FrameSharing::instance().isActive()) {
+            float bitrate = session->GetMeasuredBitrate();
+            float packetLoss = session->GetAveragePacketLoss() * 100.0f;  // Convert to percentage
+            uint32_t targetFps = 60;  // TODO: Get from settings
+            FrameSharing::instance().updateStats(bitrate, packetLoss, dropped_frames, targetFps, fps_counter);
+        }
     });
 
     this->renderparams_opts = pl_options_alloc(this->placebo_log);

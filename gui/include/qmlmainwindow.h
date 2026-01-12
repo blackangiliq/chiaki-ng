@@ -141,6 +141,8 @@ private:
     bool is_window_adjustable = false;
     bool is_stream_window_adjustable = false;
     int dropped_frames_current = 0;
+    int fps_counter = 0;        // Actual FPS counter for frame sharing stats
+    int fps_current = 0;        // Current second's frame count
     bool going_full = false;
     VideoMode video_mode = VideoMode::Normal;
     float zoom_factor = 0;
