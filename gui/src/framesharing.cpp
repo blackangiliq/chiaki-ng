@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
-// Simple & Fast Frame Sharing - v2.4 (with Performance Stats)
+// Simple & Fast Frame Sharing - v2.3
 
 #include "framesharing.h"
 
@@ -11,7 +11,7 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     h = maxHeight;
     frameNumber = 0;
     
-#ifdef Q_OS_WIN
+#ifdef _WIN32
     profilingDone = false;
     profileFrameCount = 0;
     profileTotalUs = 0;
@@ -33,7 +33,7 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     auto *hdr = static_cast<FrameSharingHeader*>(mem);
     memset(hdr, 0, sizeof(FrameSharingHeader));
     hdr->magic = 0x4B414843;
-    hdr->version = 3;  // Updated version for stats support
+    hdr->version = 2;
     hdr->format = 0;
     
     hEvent = CreateEventW(nullptr, FALSE, FALSE, L"ChiakiFrameEvent");
@@ -44,19 +44,19 @@ bool FrameSharing::initialize(int maxWidth, int maxHeight)
     }
     
     QueryPerformanceCounter(&profileStartTime);
-    
-    active.store(true);
-    return true;
 #else
     return false;
 #endif
+
+    active.store(true);
+    return true;
 }
 
 void FrameSharing::shutdown()
 {
     active.store(false);
     
-#ifdef Q_OS_WIN
+#ifdef _WIN32
     if (mem) { UnmapViewOfFile(mem); mem = nullptr; }
     if (hMap) { CloseHandle(hMap); hMap = nullptr; }
     if (hEvent) { CloseHandle(hEvent); hEvent = nullptr; }
@@ -67,7 +67,6 @@ void FrameSharing::shutdown()
 
 bool FrameSharing::sendFrame(AVFrame *frame)
 {
-#ifdef Q_OS_WIN
     if (!active.load() || !frame || !frame->data[0] || !mem) 
         return false;
     
@@ -77,6 +76,7 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     if (fw > w || fh > h)
         return false;
     
+#ifdef _WIN32
     auto *hdr = static_cast<FrameSharingHeader*>(mem);
     uint8_t *dst = static_cast<uint8_t*>(mem) + sizeof(FrameSharingHeader);
     
@@ -124,27 +124,6 @@ bool FrameSharing::sendFrame(AVFrame *frame)
     
     return true;
 #else
-    (void)frame;
     return false;
-#endif
-}
-
-void FrameSharing::updateStats(float bitrateMbps, float packetLoss, uint32_t dropped, uint32_t targetFps, uint32_t actualFps)
-{
-#ifdef Q_OS_WIN
-    if (!active.load() || !mem) return;
-    
-    auto *hdr = static_cast<FrameSharingHeader*>(mem);
-    hdr->measuredBitrateMbps = bitrateMbps;
-    hdr->packetLossPercent = packetLoss;
-    hdr->droppedFrames = dropped;
-    hdr->targetFps = targetFps;
-    hdr->actualFps = actualFps;
-#else
-    (void)bitrateMbps;
-    (void)packetLoss;
-    (void)dropped;
-    (void)targetFps;
-    (void)actualFps;
 #endif
 }

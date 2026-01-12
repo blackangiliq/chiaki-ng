@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
-// Simple & Fast Frame Sharing - v2.4 (with Performance Stats)
+// Simple & Fast Frame Sharing - v2.3
 
 #ifndef CHIAKI_FRAMESHARING_H
 #define CHIAKI_FRAMESHARING_H
 
 #include <atomic>
-#include <cstdint>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -13,14 +12,14 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-#ifdef Q_OS_WIN
+#ifdef _WIN32
 #include <windows.h>
 #endif
 
 #pragma pack(push, 1)
 struct FrameSharingHeader {
-    uint32_t magic;           // 0x4B414843 = "CHAK"
-    uint32_t version;         // 3 (updated for stats)
+    uint32_t magic;
+    uint32_t version;
     uint32_t width;
     uint32_t height;
     uint32_t stride;
@@ -29,14 +28,6 @@ struct FrameSharingHeader {
     uint64_t frameNumber;
     uint32_t dataSize;
     volatile uint32_t ready;
-    
-    // Performance Statistics (v3)
-    float measuredBitrateMbps;  // Current bitrate in Mbps
-    float packetLossPercent;    // Packet loss percentage (0-100)
-    uint32_t droppedFrames;     // Total dropped frames
-    uint32_t targetFps;         // Target FPS (30 or 60)
-    uint32_t actualFps;         // Actual measured FPS
-    uint32_t reserved[4];       // Reserved for future use
 };
 #pragma pack(pop)
 
@@ -53,28 +44,19 @@ public:
     bool sendFrame(AVFrame *frame);
     bool isActive() const { return active.load(); }
     
-    // Update performance stats (call from main app)
-    void updateStats(float bitrateMbps, float packetLoss, uint32_t dropped, uint32_t targetFps, uint32_t actualFps);
-    
     // Get profiling results (call after 10 seconds)
-#ifdef Q_OS_WIN
     double getAvgWriteTimeUs() const { return profileFrameCount > 0 ? (double)profileTotalUs / profileFrameCount : 0; }
     uint64_t getProfileFrameCount() const { return profileFrameCount; }
     bool isProfilingDone() const { return profilingDone; }
-#else
-    double getAvgWriteTimeUs() const { return 0; }
-    uint64_t getProfileFrameCount() const { return 0; }
-    bool isProfilingDone() const { return true; }
-#endif
 
 private:
     FrameSharing() : active(false), frameNumber(0), swsCtx(nullptr)
-#ifdef Q_OS_WIN
+#ifdef _WIN32
         , hMap(nullptr), hEvent(nullptr), mem(nullptr)
         , profilingDone(false), profileFrameCount(0), profileTotalUs(0)
 #endif
     {
-#ifdef Q_OS_WIN
+#ifdef _WIN32
         perfFreq.QuadPart = 0;
         profileStartTime.QuadPart = 0;
 #endif
@@ -86,7 +68,7 @@ private:
     int w, h;
     SwsContext *swsCtx;
     
-#ifdef Q_OS_WIN
+#ifdef _WIN32
     HANDLE hMap, hEvent;
     void *mem;
     bool profilingDone;
