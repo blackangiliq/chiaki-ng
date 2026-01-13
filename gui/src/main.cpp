@@ -63,10 +63,10 @@ int real_main(int argc, char *argv[])
 	qRegisterMetaType<ChiakiRegistEventType>();
 	qRegisterMetaType<ChiakiLogLevel>();
 
-	QGuiApplication::setOrganizationName("Chiaki");
-	QGuiApplication::setApplicationName("Chiaki");
+	QGuiApplication::setOrganizationName("Lucifer");
+	QGuiApplication::setApplicationName("LuciferStore");
 	QGuiApplication::setApplicationVersion(CHIAKI_VERSION);
-	QGuiApplication::setApplicationDisplayName("Remote Controller");
+	QGuiApplication::setApplicationDisplayName("Lucifer Store");
 #if defined(Q_OS_MACOS)
 	qputenv("QT_MTL_NO_TRANSACTION", "1");
 #endif
@@ -101,7 +101,7 @@ int real_main(int argc, char *argv[])
 		return 1;
 	}
 
-    SDL_SetHint(SDL_HINT_APP_NAME, "Remote Controller");
+    SDL_SetHint(SDL_HINT_APP_NAME, "Lucifer Store");
 
 	if(SDL_Init(SDL_INIT_AUDIO) < 0)
 	{
@@ -115,11 +115,8 @@ int real_main(int argc, char *argv[])
 #endif
 	QApplication app(argc, argv);
 
-#ifdef Q_OS_MACOS
-	QGuiApplication::setWindowIcon(QIcon(":/icons/chiaking_macos.svg"));
-#else
-	QGuiApplication::setWindowIcon(QIcon(":/icons/chiaking.svg"));
-#endif
+	// Lucifer Store Logo as app icon
+	QGuiApplication::setWindowIcon(QIcon(":/icons/lucifer_logo.png"));
 
 	QCommandLineParser parser;
 	parser.setOptionsAfterPositionalArgumentsMode(QCommandLineParser::ParseAsPositionalArguments);

@@ -1,0 +1,22 @@
+pragma Singleton
+import QtQuick
+
+// ═══════════════════════════════════════════════════════════════
+// 🔒 APP CONFIGURATION - CHANGE APP NAME HERE ONLY
+// ═══════════════════════════════════════════════════════════════
+// This is a Singleton - the app name is defined here ONCE
+// and used everywhere. To change the name, modify ONLY this file.
+// ═══════════════════════════════════════════════════════════════
+
+QtObject {
+    // ════════════════════════════════════════════════════════════
+    // 🎮 APP NAME - CHANGE THIS VALUE TO RENAME THE APP
+    // ════════════════════════════════════════════════════════════
+    readonly property string appName: "Lucifer Store"
+    
+    // App version (synced with Qt.application.version)
+    readonly property string appVersion: Qt.application.version
+    
+    // Full display name
+    readonly property string displayName: appName + " v" + appVersion
+}

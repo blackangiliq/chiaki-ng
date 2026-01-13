@@ -4,6 +4,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
+import "." as App
 
 Pane {
     padding: 0
@@ -14,7 +15,7 @@ Pane {
         {
             root.initialAsk = true;
             if(Chiaki.settings.addSteamShortcutAsk && (typeof Chiaki.createSteamShortcut === "function"))
-                root.showRemindDialog(qsTr("Official Steam artwork + controller layout"), qsTr("Would you like to either create a new non-Steam game for chiaki-ng\nor update an existing non-Steam game with the official artwork and controller layout?") + "\n\n" + qsTr("(Note: If you select no now and want to do this later, click the button or press R3 from the main menu.)"), false, () => root.showSteamShortcutDialog(true));
+                root.showRemindDialog(qsTr("Official Steam artwork + controller layout"), qsTr("Would you like to either create a new non-Steam game for %1\nor update an existing non-Steam game with the official artwork and controller layout?").arg(App.AppConfig.appName) + "\n\n" + qsTr("(Note: If you select no now and want to do this later, click the button or press R3 from the main menu.)"), false, () => root.showSteamShortcutDialog(true));
             else if(Chiaki.settings.remotePlayAsk)
             {
                 if(!Chiaki.settings.psnRefreshToken || !Chiaki.settings.psnAuthToken || !Chiaki.settings.psnAuthTokenExpiry || !Chiaki.settings.psnAccountId)
@@ -68,123 +69,19 @@ Pane {
         }
     }
 
-    ToolBar {
-        id: toolBar
-        anchors {
-            top: parent.top
-            left: parent.left
-            right: parent.right
-        }
-        height: 80
-
-        RowLayout {
-            anchors {
-                fill: parent
-                leftMargin: 10
-                rightMargin: 10
-            }
-
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 100
-                flat: true
-                text: "×"
-                font.pixelSize: 60
-                focusPolicy: Qt.NoFocus
-                onClicked: Qt.quit()
-                Material.roundedScale: Material.SmallScale
-            }
-
-            Item { Layout.fillWidth: true }
-
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 350
-                flat: true
-                text: "Create Steam Shortcut"
-                focusPolicy: Qt.NoFocus
-                onClicked: root.showSteamShortcutDialog(false)
-                Material.roundedScale: Material.SmallScale
-                visible: typeof Chiaki.createSteamShortcut === "function"
-                Image {
-                    anchors {
-                        right: parent.right
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: 12
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/l3.svg"
-                }
-            }
-
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 400
-                flat: true
-                text: "Refresh PSN Hosts"
-                icon.source: "qrc:/icons/r1.svg"
-                focusPolicy: Qt.NoFocus
-                onClicked: Chiaki.refreshPsnToken();
-                Material.roundedScale: Material.SmallScale
-                visible: Chiaki.settings.psnAuthToken
-            }
-
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 400
-                flat: true
-                focusPolicy: Qt.NoFocus
-                Material.roundedScale: Material.SmallScale
-                visible: !Chiaki.settings.psnAuthToken
-            }
-
-            Button {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 300
-                flat: true
-                text: "Add Manual Host"
-                focusPolicy: Qt.NoFocus
-                onClicked: root.showManualHostDialog()
-                Material.roundedScale: Material.SmallScale
-                Image {
-                    anchors {
-                        left: parent.left
-                        verticalCenter: parent.verticalCenter
-                        leftMargin: 12
-                    }
-                    width: 28
-                    height: 28
-                    sourceSize: Qt.size(width, height)
-                    source: "qrc:/icons/r3.svg"
-                }
-            }
-
-            Button {
-                id: settingsButton
-                Layout.fillHeight: true
-                Layout.preferredWidth: 100
-                flat: true
-                icon.source: "qrc:/icons/settings-20px.svg";
-                icon.width: 50
-                icon.height: 50
-                focusPolicy: Qt.NoFocus
-                onClicked: root.showSettingsDialog()
-                Material.roundedScale: Material.SmallScale
-            }
-        }
-    }
-
+    // ═══════════════════════════════════════════════════════════════
+    // 🎮 HOSTS LIST - Full screen without toolbar
+    // ═══════════════════════════════════════════════════════════════
     ListView {
         id: hostsView
         keyNavigationWraps: true
         anchors {
-            top: toolBar.bottom
+            top: parent.top
             left: parent.left
             right: parent.right
             bottom: parent.bottom
-            bottomMargin: 50
+            topMargin: 20
+            bottomMargin: 100
         }
         clip: true
         model: Chiaki.hosts
@@ -392,43 +289,71 @@ Pane {
         }
     }     
 
-    RoundButton {
+    // ═══════════════════════════════════════════════════════════════
+    // 🎛️ BOTTOM CONTROLS - WiFi + Settings together
+    // ═══════════════════════════════════════════════════════════════
+    Row {
         anchors {
             left: parent.left
             bottom: parent.bottom
             margins: 20
         }
-        icon.source: "qrc:/icons/discover-" + (checked ? "" : "off-") + "24px.svg"
-        icon.width: 50
-        icon.height: 50
-        padding: 20
-        focusPolicy: Qt.NoFocus
-        checkable: true
-        checked: Chiaki.discoveryEnabled
-        onToggled: Chiaki.discoveryEnabled = !Chiaki.discoveryEnabled
-        Material.background: Material.accent
+        spacing: 10
+
+        // WiFi/Discovery Button
+        RoundButton {
+            icon.source: "qrc:/icons/discover-" + (checked ? "" : "off-") + "24px.svg"
+            icon.width: 50
+            icon.height: 50
+            padding: 20
+            focusPolicy: Qt.NoFocus
+            checkable: true
+            checked: Chiaki.discoveryEnabled
+            onToggled: Chiaki.discoveryEnabled = !Chiaki.discoveryEnabled
+            Material.background: Material.accent
+        }
+
+        // Settings Button - moved here next to WiFi
+        RoundButton {
+            id: settingsButton
+            icon.source: "qrc:/icons/settings-20px.svg"
+            icon.width: 50
+            icon.height: 50
+            padding: 20
+            focusPolicy: Qt.NoFocus
+            onClicked: root.showSettingsDialog()
+            Material.background: "#7B1FA2"  // Purple accent
+        }
     }
 
+    // Version Label
     Label {
         anchors {
             right: parent.right
             bottom: parent.bottom
             margins: 20
         }
-        text: Qt.application.version
+        text: App.AppConfig.appName + " v" + Qt.application.version
+        font.pixelSize: 16
+        opacity: 0.7
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // 🎨 BACKGROUND LOGO - Lucifer Logo
+    // ═══════════════════════════════════════════════════════════════
     Image {
         id: logoImage
         anchors.centerIn: parent
-        source: "qrc:/icons/chiaking-logo-white.svg"
-        sourceSize: Qt.size(Math.min(parent.width, parent.height) / 2, Math.min(parent.width, parent.height) / 2)
+        source: "qrc:/icons/lucifer_logo.png"
+        width: Math.min(parent.width, parent.height) * 0.5
+        height: width
+        fillMode: Image.PreserveAspectFit
 
         PropertyAnimation {
             target: logoImage
             property: "opacity"
             from: 0.05
-            to: 0.20
+            to: 0.25
             duration: 1000
             easing.type: Easing.OutCubic
             running: true
