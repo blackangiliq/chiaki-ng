@@ -472,6 +472,11 @@ QJsonDocument ApiServer::handleGetSettings()
     }
     general["placeboPreset"] = placeboPreset;
     
+    // Frame Sharing Settings (for Chiki)
+    general["frameSharingEnabled"] = settings->GetFrameSharingEnabled();
+    general["localRenderDisabled"] = settings->GetLocalRenderDisabled();
+    general["showStreamStats"] = settings->GetShowStreamStats();
+    
     response["general"] = general;
     
     // Video Settings - PS5 Local
@@ -547,6 +552,22 @@ QJsonDocument ApiServer::handlePutSettings(const QJsonObject &body)
         else if (pp == "custom") preset = PlaceboPreset::Custom;
         settings->SetPlaceboPreset(preset);
         updated.append("placeboPreset");
+    }
+    
+    // Frame Sharing Settings (for Chiki)
+    if (body.contains("frameSharingEnabled")) {
+        settings->SetFrameSharingEnabled(body["frameSharingEnabled"].toBool());
+        updated.append("frameSharingEnabled");
+    }
+    
+    if (body.contains("localRenderDisabled")) {
+        settings->SetLocalRenderDisabled(body["localRenderDisabled"].toBool());
+        updated.append("localRenderDisabled");
+    }
+    
+    if (body.contains("showStreamStats")) {
+        settings->SetShowStreamStats(body["showStreamStats"].toBool());
+        updated.append("showStreamStats");
     }
     
     response["updated"] = updated;
