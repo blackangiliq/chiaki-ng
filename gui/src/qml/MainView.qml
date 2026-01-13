@@ -290,7 +290,7 @@ Pane {
     }     
 
     // ═══════════════════════════════════════════════════════════════
-    // 🎛️ BOTTOM CONTROLS - WiFi + Settings together
+    // 🎛️ BOTTOM CONTROLS - WiFi + Settings + Lucifer text
     // ═══════════════════════════════════════════════════════════════
     Row {
         anchors {
@@ -313,7 +313,7 @@ Pane {
             Material.background: Material.accent
         }
 
-        // Settings Button - moved here next to WiFi
+        // Settings Button
         RoundButton {
             id: settingsButton
             icon.source: "qrc:/icons/settings-20px.svg"
@@ -324,18 +324,15 @@ Pane {
             onClicked: root.showSettingsDialog()
             Material.background: "#7B1FA2"  // Purple accent
         }
-    }
 
-    // Version Label
-    Label {
-        anchors {
-            right: parent.right
-            bottom: parent.bottom
-            margins: 20
+        // Lucifer Label next to settings
+        Label {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Lucifer"
+            font.pixelSize: 24
+            font.bold: true
+            color: "#9C27B0"  // Purple color
         }
-        text: App.AppConfig.appName + " v" + Qt.application.version
-        font.pixelSize: 16
-        opacity: 0.7
     }
 
     // ═══════════════════════════════════════════════════════════════

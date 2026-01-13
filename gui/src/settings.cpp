@@ -577,7 +577,7 @@ static const QMap<PlaceboPreset, QString> placebo_preset_values = {
 	{ PlaceboPreset::Custom, "custom" }
 };
 
-static const PlaceboPreset placebo_preset_default = PlaceboPreset::HighQuality;
+static const PlaceboPreset placebo_preset_default = PlaceboPreset::Fast;
 
 PlaceboPreset Settings::GetPlaceboPreset() const
 {
@@ -663,7 +663,7 @@ void Settings::SetAutoConnectHost(const QByteArray &mac)
 
 QString Settings::GetHardwareDecoder() const
 {
-	return settings.value("settings/hw_decoder", "auto").toString();
+	return settings.value("settings/hw_decoder", "d3d11va").toString();
 }
 
 void Settings::SetHardwareDecoder(const QString &hw_decoder)
