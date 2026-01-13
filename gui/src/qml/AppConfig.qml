@@ -1,11 +1,10 @@
-pragma Singleton
 import QtQuick
 
 // ═══════════════════════════════════════════════════════════════
 // 🔒 APP CONFIGURATION - CHANGE APP NAME HERE ONLY
 // ═══════════════════════════════════════════════════════════════
-// This is a Singleton - the app name is defined here ONCE
-// and used everywhere. To change the name, modify ONLY this file.
+// The app name is defined here ONCE and used everywhere.
+// To change the name, modify ONLY this file.
 // ═══════════════════════════════════════════════════════════════
 
 QtObject {
