@@ -4,8 +4,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
-
-pragma ComponentBehavior: Bound
+import "." as App
 
 Pane {
     padding: 0
@@ -16,7 +15,7 @@ Pane {
         {
             root.initialAsk = true;
             if(Chiaki.settings.addSteamShortcutAsk && (typeof Chiaki.createSteamShortcut === "function"))
-                root.showRemindDialog(qsTr("Official Steam artwork + controller layout"), qsTr("Would you like to either create a new non-Steam game for %1\nor update an existing non-Steam game with the official artwork and controller layout?").arg("Lucifer Store") + "\n\n" + qsTr("(Note: If you select no now and want to do this later, click the button or press R3 from the main menu.)"), false, () => root.showSteamShortcutDialog(true));
+                root.showRemindDialog(qsTr("Official Steam artwork + controller layout"), qsTr("Would you like to either create a new non-Steam game for %1\nor update an existing non-Steam game with the official artwork and controller layout?").arg(App.AppConfig.appName) + "\n\n" + qsTr("(Note: If you select no now and want to do this later, click the button or press R3 from the main menu.)"), false, () => root.showSteamShortcutDialog(true));
             else if(Chiaki.settings.remotePlayAsk)
             {
                 if(!Chiaki.settings.psnRefreshToken || !Chiaki.settings.psnAuthToken || !Chiaki.settings.psnAuthTokenExpiry || !Chiaki.settings.psnAccountId)

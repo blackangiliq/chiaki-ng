@@ -6,6 +6,7 @@ import QtQuick.Controls.Material
 import org.streetpea.chiaking
 
 import "controls" as C
+import "." as App
 
 DialogView {
     id: dialog
@@ -66,7 +67,7 @@ DialogView {
             C.TextField {
                 id: name
                 Layout.preferredWidth: 400
-                text: Chiaki.settings.currentProfile ? "Lucifer Store " + Chiaki.settings.currentProfile : "Lucifer Store"
+                text: Chiaki.settings.currentProfile ? App.AppConfig.appName + " " + Chiaki.settings.currentProfile : App.AppConfig.appName
                 firstInFocusChain: true
             }
 
