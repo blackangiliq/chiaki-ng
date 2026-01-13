@@ -1,4 +1,4 @@
-*~
+﻿*~
 *.swp
 .idea
 build
@@ -39,3 +39,7 @@ chiaki.conf
 .cache/
 *.vscode
 site/
+
+# Build output
+chiaki-ng-Win/
+lucifer_logo.png
