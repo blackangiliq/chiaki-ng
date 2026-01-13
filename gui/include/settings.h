@@ -255,7 +255,7 @@ class Settings : public QObject
 		bool GetFrameSharingEnabled() const      { return settings.value("settings/frame_sharing_enabled", true).toBool(); }
 		void SetFrameSharingEnabled(bool enabled) { settings.setValue("settings/frame_sharing_enabled", enabled); }
 
-		bool GetLocalRenderDisabled() const      { return settings.value("settings/local_render_disabled", false).toBool(); }
+		bool GetLocalRenderDisabled() const      { return settings.value("settings/local_render_disabled", true).toBool(); }  // Default: ON for better performance with Chiki
 		void SetLocalRenderDisabled(bool disabled) { settings.setValue("settings/local_render_disabled", disabled); }
 
 		bool GetButtonsByPosition() const 		{ return settings.value("settings/buttons_by_pos", false).toBool(); }
