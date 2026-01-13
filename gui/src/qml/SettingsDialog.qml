@@ -8,7 +8,6 @@ import QtQuick.Dialogs
 import org.streetpea.chiaking
 
 import "controls" as C
-import "." as App
 
 DialogView {
     enum Console {
@@ -2596,7 +2595,7 @@ DialogView {
 
                     C.Button {
                         id: aboutButton
-                        text: qsTr("About %1").arg(App.AppConfig.appName)
+                        text: qsTr("About %1").arg("Lucifer Store")
                         onClicked: aboutDialog.open()
                         Material.roundedScale: Material.SmallScale
                     }
@@ -2643,7 +2642,7 @@ DialogView {
             parent: Overlay.overlay
             x: Math.round((root.width - width) / 2)
             y: Math.round((root.height - height) / 2)
-            title: qsTr("About %1").arg(App.AppConfig.appName)
+            title: qsTr("About %1").arg("Lucifer Store")
             modal: true
             standardButtons: Dialog.Ok
             Material.roundedScale: Material.MediumScale
@@ -2666,7 +2665,7 @@ DialogView {
                     Layout.preferredWidth: 400
                     verticalAlignment: Text.AlignTop
                     wrapMode: Text.Wrap
-                    text: "<h1>" + App.AppConfig.appName + "</h1> version %1
+                    text: "<h1>Lucifer Store</h1> version %1
 
                         <p>PlayStation Remote Play Client</p>
 

@@ -1,2 +1,0 @@
-module org.streetpea.chiaking.config
-singleton AppConfig 1.0 AppConfig.qml

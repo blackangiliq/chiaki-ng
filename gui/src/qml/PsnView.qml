@@ -3,7 +3,6 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 
 import org.streetpea.chiaking
-import "." as App
 
 Rectangle {
     id: view
@@ -182,7 +181,7 @@ Rectangle {
             switch(Chiaki.connectState)
             {
                 case Chiaki.PsnConnectState.LinkingConsole:
-                    infoLabel.text = registOnly ? qsTr("Registering PlayStation console with %1 ...").arg(App.AppConfig.appName) : qsTr("Linking %1 with PlayStation console ...").arg(App.AppConfig.appName)
+                    infoLabel.text = registOnly ? qsTr("Registering PlayStation console with %1 ...").arg("Lucifer Store") : qsTr("Linking %1 with PlayStation console ...").arg("Lucifer Store")
                     view.allowClose = false
                     break
                 case Chiaki.PsnConnectState.RegisteringConsole:
