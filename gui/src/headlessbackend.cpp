@@ -9,6 +9,7 @@
 
 #include <QDebug>
 #include <QTimer>
+#include <QThread>
 
 HeadlessBackend::HeadlessBackend(Settings *settings, QObject *parent)
     : QObject(parent)
