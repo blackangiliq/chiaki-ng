@@ -10,13 +10,14 @@
 #include <QDebug>
 #include <QTimer>
 
-Q_LOGGING_CATEGORY(chiakiHeadless, "chiaki.headless", QtInfoMsg);
-
 HeadlessBackend::HeadlessBackend(Settings *settings, QObject *parent)
     : QObject(parent)
     , m_settings(settings)
-    , m_discoveryManager(settings, this)
+    , m_discoveryManager(this)
 {
+    // Setup discovery manager with settings
+    m_discoveryManager.SetSettings(settings);
+    
     // Connect discovery signals
     connect(&m_discoveryManager, &DiscoveryManager::HostsUpdated, 
             this, &HeadlessBackend::onDiscoveryHostsChanged);
@@ -24,7 +25,7 @@ HeadlessBackend::HeadlessBackend(Settings *settings, QObject *parent)
     // Enable discovery
     m_discoveryManager.SetActive(true);
     
-    qCInfo(chiakiHeadless) << "Headless backend initialized";
+    qInfo() << "Headless backend initialized";
 }
 
 HeadlessBackend::~HeadlessBackend()
@@ -39,14 +40,14 @@ bool HeadlessBackend::start(quint16 apiPort)
     m_apiServer->setHeadlessBackend(this);
     
     if (!m_apiServer->start(apiPort)) {
-        qCCritical(chiakiHeadless) << "Failed to start API Server on port" << apiPort;
+        qCritical() << "Failed to start API Server on port" << apiPort;
         delete m_apiServer;
         m_apiServer = nullptr;
         return false;
     }
     
-    qCInfo(chiakiHeadless) << "API Server running on http://127.0.0.1:" << apiPort;
-    qCInfo(chiakiHeadless) << "Headless mode started - waiting for API commands...";
+    qInfo() << "API Server running on http://127.0.0.1:" << apiPort;
+    qInfo() << "Headless mode started - waiting for API commands...";
     
     return true;
 }
@@ -89,7 +90,7 @@ HeadlessBackend::DisplayServer HeadlessBackend::displayServerAt(int index) const
             server.discovered = true;
             server.discovery_host = host;
             
-            HostMAC mac = HostMAC(host.host_id);
+            HostMAC mac = host.GetHostMAC();
             if (m_settings->GetRegisteredHostRegistered(mac)) {
                 server.registered = true;
                 server.registered_host = m_settings->GetRegisteredHost(mac);
@@ -135,7 +136,7 @@ QVariantList HeadlessBackend::hosts() const
         m["app"] = host.running_app_name;
         m["titleId"] = host.running_app_titleid;
         
-        HostMAC mac(host.host_id);
+        HostMAC mac = host.GetHostMAC();
         m["registered"] = m_settings->GetRegisteredHostRegistered(mac);
         
         result.append(m);
@@ -172,35 +173,13 @@ bool HeadlessBackend::registerHost(const QString &host, const QString &psn_id,
                                    bool broadcast, int target, const QJSValue &callback)
 {
     Q_UNUSED(callback);
+    Q_UNUSED(cpin);
     
-    ChiakiRegistInfo regist_info = {};
-    regist_info.target = static_cast<ChiakiTarget>(target);
-    regist_info.host = host.toUtf8().constData();
-    regist_info.broadcast = broadcast;
+    qInfo() << "Starting registration for" << host;
     
-    QByteArray psnIdBytes = psn_id.toUtf8();
-    QByteArray pinBytes = pin.toUtf8();
-    
-    // PSN Account ID
-    size_t psn_id_sz = sizeof(regist_info.psn_online_id);
-    strncpy(regist_info.psn_online_id, psnIdBytes.constData(), psn_id_sz - 1);
-    regist_info.psn_online_id[psn_id_sz - 1] = '\0';
-    
-    // PIN
-    regist_info.pin = strtoul(pinBytes.constData(), nullptr, 10);
-    
-    // Console PIN if provided
-    if (!cpin.isEmpty()) {
-        QByteArray cpinBytes = cpin.toUtf8();
-        regist_info.console_pin_size = cpinBytes.size();
-        memcpy(regist_info.console_pin, cpinBytes.constData(), 
-               qMin((int)cpinBytes.size(), (int)sizeof(regist_info.console_pin)));
-    }
-    
-    qCInfo(chiakiHeadless) << "Starting registration for" << host;
-    
-    // Registration is handled asynchronously
+    // Registration needs to be implemented properly with ChiakiRegist
     // For now, return true to indicate the request was received
+    // Full implementation would require async handling
     return true;
 }
 
@@ -210,13 +189,13 @@ void HeadlessBackend::connectToHost(int index, QString nickname)
     
     DisplayServer server = displayServerAt(index);
     if (!server.valid) {
-        qCWarning(chiakiHeadless) << "Invalid host index:" << index;
+        qWarning() << "Invalid host index:" << index;
         emit error("Connection Error", "Invalid host index");
         return;
     }
     
     if (!server.registered) {
-        qCWarning(chiakiHeadless) << "Host not registered";
+        qWarning() << "Host not registered";
         emit error("Connection Error", "Host not registered");
         return;
     }
@@ -242,14 +221,14 @@ void HeadlessBackend::connectToHost(int index, QString nickname)
 void HeadlessBackend::createSession(const StreamSessionConnectInfo &connect_info)
 {
     if (m_session) {
-        qCWarning(chiakiHeadless) << "Session already exists, stopping first";
+        qWarning() << "Session already exists, stopping first";
         stopSession(false);
     }
     
     try {
         m_session = new StreamSession(connect_info, this);
     } catch (const std::exception &e) {
-        qCCritical(chiakiHeadless) << "Failed to create session:" << e.what();
+        qCritical() << "Failed to create session:" << e.what();
         emit error("Session Error", e.what());
         return;
     }
@@ -257,23 +236,20 @@ void HeadlessBackend::createSession(const StreamSessionConnectInfo &connect_info
     connect(m_session, &StreamSession::SessionQuit, 
             this, &HeadlessBackend::onSessionQuit);
     
-    // Frame processing thread (headless - just share frames, no rendering)
-    m_frameThread = new QThread(this);
-    m_frameThread->setObjectName("frame-share");
-    
+    // Frame processing (headless - just share frames, no rendering)
     connect(m_session, &StreamSession::FfmpegFrameAvailable, 
             this, &HeadlessBackend::processFrame, Qt::QueuedConnection);
     
     // Initialize frame sharing
     if (m_settings->GetFrameSharingEnabled()) {
         FrameSharing::instance().initialize(1920, 1080);
-        qCInfo(chiakiHeadless) << "Frame sharing enabled via shared memory";
+        qInfo() << "Frame sharing enabled via shared memory";
     }
     
     m_session->Start();
     emit sessionChanged(m_session);
     
-    qCInfo(chiakiHeadless) << "Stream session started";
+    qInfo() << "Stream session started";
 }
 
 void HeadlessBackend::processFrame()
@@ -333,13 +309,6 @@ void HeadlessBackend::stopSession(bool sleep)
     // Wait a bit for clean shutdown
     QThread::msleep(100);
     
-    if (m_frameThread) {
-        m_frameThread->quit();
-        m_frameThread->wait();
-        delete m_frameThread;
-        m_frameThread = nullptr;
-    }
-    
     delete m_session;
     m_session = nullptr;
     
@@ -347,19 +316,13 @@ void HeadlessBackend::stopSession(bool sleep)
     
     emit sessionChanged(nullptr);
     
-    qCInfo(chiakiHeadless) << "Stream session stopped";
+    qInfo() << "Stream session stopped";
 }
 
 void HeadlessBackend::onSessionQuit(ChiakiQuitReason reason, const QString &reason_str)
 {
-    qCInfo(chiakiHeadless) << "Session quit:" << reason_str;
-    
-    if (m_frameThread) {
-        m_frameThread->quit();
-        m_frameThread->wait();
-        delete m_frameThread;
-        m_frameThread = nullptr;
-    }
+    Q_UNUSED(reason);
+    qInfo() << "Session quit:" << reason_str;
     
     m_session->deleteLater();
     m_session = nullptr;
@@ -375,7 +338,7 @@ void HeadlessBackend::wakeUpHost(int index, QString nickname)
     
     DisplayServer server = displayServerAt(index);
     if (!server.valid || !server.registered) {
-        qCWarning(chiakiHeadless) << "Cannot wake up: invalid or unregistered host";
+        qWarning() << "Cannot wake up: invalid or unregistered host";
         return;
     }
     
@@ -396,20 +359,13 @@ bool HeadlessBackend::sendWakeup(const DisplayServer &server)
 
 bool HeadlessBackend::sendWakeup(const QString &host, const QByteArray &regist_key, bool ps5)
 {
-    qCInfo(chiakiHeadless) << "Sending wakeup to" << host;
+    qInfo() << "Sending wakeup to" << host;
     
-    uint64_t credential = 0;
-    if (regist_key.size() >= sizeof(uint64_t)) {
-        memcpy(&credential, regist_key.constData(), sizeof(uint64_t));
+    try {
+        m_discoveryManager.SendWakeup(host, regist_key, ps5);
+        return true;
+    } catch (const std::exception &e) {
+        qWarning() << "Wakeup failed:" << e.what();
+        return false;
     }
-    
-    ChiakiErrorCode err = chiaki_discovery_wakeup(
-        nullptr,  // No log in headless
-        nullptr,
-        host.toUtf8().constData(),
-        credential,
-        ps5
-    );
-    
-    return err == CHIAKI_ERR_SUCCESS;
 }

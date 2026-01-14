@@ -5,7 +5,6 @@
 #define CHIAKI_HEADLESSBACKEND_H
 
 #include <QObject>
-#include <QThread>
 #include <QCoreApplication>
 #include <QJSValue>
 
@@ -73,10 +72,8 @@ private:
     ApiServer *m_apiServer = nullptr;
     DiscoveryManager m_discoveryManager;
     StreamSession *m_session = nullptr;
-    QThread *m_frameThread = nullptr;
     
     QList<DiscoveryHost> m_discoveryHosts;
-    QList<QString> m_wakingSleepingNicknames;
 };
 
 #endif // CHIAKI_HEADLESSBACKEND_H
