@@ -3,6 +3,7 @@
 
 #include "apiserver.h"
 #include "qmlbackend.h"
+#include "headlessbackend.h"
 #include "settings.h"
 #include "discoverymanager.h"
 #include "streamsession.h"
@@ -13,6 +14,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDebug>
+#include <QMutexLocker>
 
 ApiServer::ApiServer(QmlBackend *backend, Settings *settings, QObject *parent)
     : QObject(parent)
@@ -246,7 +248,12 @@ QJsonDocument ApiServer::handleGetHosts()
 {
     QJsonArray hostsArray;
     
-    QVariantList hostsList = backend->hosts();
+    QVariantList hostsList;
+    if (headlessBackend) {
+        hostsList = headlessBackend->hosts();
+    } else if (backend) {
+        hostsList = backend->hosts();
+    }
     
     for (const QVariant &hostVar : hostsList) {
         QVariantMap host = hostVar.toMap();
@@ -317,7 +324,13 @@ QJsonDocument ApiServer::handlePostRegister(const QJsonObject &body)
     bool broadcast = (host == "255.255.255.255");
     
     QJsonObject response;
-    bool started = backend->registerHost(host, psnId, pin, consolePin, broadcast, target, QJSValue());
+    bool started = false;
+    
+    if (headlessBackend) {
+        started = headlessBackend->registerHost(host, psnId, pin, consolePin, broadcast, target, QJSValue());
+    } else if (backend) {
+        started = backend->registerHost(host, psnId, pin, consolePin, broadcast, target, QJSValue());
+    }
     
     if (started) {
         response["success"] = true;
@@ -342,7 +355,12 @@ QJsonDocument ApiServer::handlePostConnect(const QJsonObject &body)
     if (index < 0) {
         // Find by nickname or address
         QString address = body["address"].toString();
-        QVariantList hostsList = backend->hosts();
+        QVariantList hostsList;
+        if (headlessBackend) {
+            hostsList = headlessBackend->hosts();
+        } else if (backend) {
+            hostsList = backend->hosts();
+        }
         
         for (int i = 0; i < hostsList.size(); i++) {
             QVariantMap host = hostsList[i].toMap();
@@ -359,7 +377,11 @@ QJsonDocument ApiServer::handlePostConnect(const QJsonObject &body)
         return QJsonDocument(response);
     }
     
-    backend->connectToHost(index, nickname);
+    if (headlessBackend) {
+        headlessBackend->connectToHost(index, nickname);
+    } else if (backend) {
+        backend->connectToHost(index, nickname);
+    }
     
     response["success"] = true;
     response["message"] = "Connection initiated";
@@ -372,7 +394,11 @@ QJsonDocument ApiServer::handlePostDisconnect()
 {
     QJsonObject response;
     
-    backend->stopSession(false);
+    if (headlessBackend) {
+        headlessBackend->stopSession(false);
+    } else if (backend) {
+        backend->stopSession(false);
+    }
     
     response["success"] = true;
     response["message"] = "Disconnect requested";
@@ -389,7 +415,12 @@ QJsonDocument ApiServer::handlePostWakeup(const QJsonObject &body)
     
     if (index < 0) {
         QString address = body["address"].toString();
-        QVariantList hostsList = backend->hosts();
+        QVariantList hostsList;
+        if (headlessBackend) {
+            hostsList = headlessBackend->hosts();
+        } else if (backend) {
+            hostsList = backend->hosts();
+        }
         
         for (int i = 0; i < hostsList.size(); i++) {
             QVariantMap host = hostsList[i].toMap();
@@ -406,7 +437,11 @@ QJsonDocument ApiServer::handlePostWakeup(const QJsonObject &body)
         return QJsonDocument(response);
     }
     
-    backend->wakeUpHost(index, nickname);
+    if (headlessBackend) {
+        headlessBackend->wakeUpHost(index, nickname);
+    } else if (backend) {
+        backend->wakeUpHost(index, nickname);
+    }
     
     response["success"] = true;
     response["message"] = "Wakeup signal sent";
@@ -418,7 +453,12 @@ QJsonDocument ApiServer::handleGetStreamStatus()
 {
     QJsonObject response;
     
-    StreamSession *session = backend->qmlSession();
+    StreamSession *session = nullptr;
+    if (headlessBackend) {
+        session = headlessBackend->session();
+    } else if (backend) {
+        session = backend->qmlSession();
+    }
     
     if (session) {
         response["streaming"] = true;
@@ -432,6 +472,7 @@ QJsonDocument ApiServer::handleGetStreamStatus()
         response["connected"] = false;
     }
     
+    response["headless"] = isHeadless();
     response["success"] = true;
     
     return QJsonDocument(response);

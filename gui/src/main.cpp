@@ -9,7 +9,9 @@ int main(int argc, char *argv[]) { return real_main(argc, argv); }
 #include <controllermanager.h>
 #include <discoverymanager.h>
 #include <qmlmainwindow.h>
+#include <headlessbackend.h>
 #include <QApplication>
+#include <QCoreApplication>
 #include <QtTypes>
 
 #ifdef CHIAKI_ENABLE_CLI
@@ -53,6 +55,40 @@ static const QMap<QString, CLICommand> cli_commands = {
 
 int RunStream(QGuiApplication &app, const StreamSessionConnectInfo &connect_info);
 int RunMain(QGuiApplication &app, Settings *settings, bool exit_app_on_stream_exit);
+int RunHeadless(Settings *settings, quint16 apiPort);
+
+// Check if --headless is in argv (before creating any Qt app)
+static bool isHeadlessMode(int argc, char *argv[])
+{
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "--headless") == 0 || strcmp(argv[i], "-headless") == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Get API port from argv
+static quint16 getApiPort(int argc, char *argv[])
+{
+	for (int i = 1; i < argc - 1; i++) {
+		if (strcmp(argv[i], "--api-port") == 0 || strcmp(argv[i], "-api-port") == 0) {
+			return static_cast<quint16>(atoi(argv[i + 1]));
+		}
+	}
+	return 5218;  // Default port
+}
+
+// Get profile from argv
+static QString getProfile(int argc, char *argv[])
+{
+	for (int i = 1; i < argc - 1; i++) {
+		if (strcmp(argv[i], "--profile") == 0 || strcmp(argv[i], "-profile") == 0) {
+			return QString::fromUtf8(argv[i + 1]);
+		}
+	}
+	return QString();
+}
 
 int real_main(int argc, char *argv[])
 {
@@ -67,6 +103,38 @@ int real_main(int argc, char *argv[])
 	QGuiApplication::setApplicationName("LuciferStore");
 	QGuiApplication::setApplicationVersion(CHIAKI_VERSION);
 	QGuiApplication::setApplicationDisplayName("Lucifer Store");
+
+	// Check for headless mode BEFORE creating any Qt application
+	bool headless = isHeadlessMode(argc, argv);
+	
+	if (headless) {
+		// HEADLESS MODE - No GUI at all
+		qputenv("QT_QPA_PLATFORM", "offscreen");  // No display needed
+		
+		ChiakiErrorCode err = chiaki_lib_init();
+		if (err != CHIAKI_ERR_SUCCESS) {
+			fprintf(stderr, "Chiaki lib init failed: %s\n", chiaki_error_string(err));
+			return 1;
+		}
+		
+		SDL_SetHint(SDL_HINT_APP_NAME, "Lucifer Store");
+		if (SDL_Init(SDL_INIT_AUDIO) < 0) {
+			fprintf(stderr, "SDL Audio init failed: %s\n", SDL_GetError());
+			return 1;
+		}
+		
+		QString profile = getProfile(argc, argv);
+		quint16 apiPort = getApiPort(argc, argv);
+		
+		Settings settings(profile);
+		if (!profile.isEmpty()) {
+			settings.SetCurrentProfile(profile);
+		}
+		
+		return RunHeadless(&settings, apiPort);
+	}
+
+	// GUI MODE - Normal operation
 #if defined(Q_OS_MACOS)
 	qputenv("QT_MTL_NO_TRANSACTION", "1");
 #endif
@@ -160,6 +228,12 @@ int real_main(int argc, char *argv[])
 
 	QCommandLineOption passcode_option("passcode", "Automatically send your PlayStation login passcode (only affects users with a login passcode set on their PlayStation console).", "passcode");
 	parser.addOption(passcode_option);
+
+	QCommandLineOption headless_option("headless", "Run in headless mode (no GUI, API only). Use API at http://127.0.0.1:5218 to control.");
+	parser.addOption(headless_option);
+
+	QCommandLineOption api_port_option("api-port", "API server port (default: 5218)", "port", "5218");
+	parser.addOption(api_port_option);
 
 	parser.process(app);
 	QStringList args = parser.positionalArguments();
@@ -313,5 +387,45 @@ int RunStream(QGuiApplication &app, const StreamSessionConnectInfo &connect_info
 {
 	QmlMainWindow main_window(connect_info);
 	main_window.show();
+	return app.exec();
+}
+
+int RunHeadless(Settings *settings, quint16 apiPort)
+{
+	// Create a minimal QCoreApplication for headless mode
+	int fake_argc = 1;
+	char *fake_argv[] = { (char*)"chiaki-headless", nullptr };
+	QCoreApplication app(fake_argc, fake_argv);
+	
+	qInfo() << "========================================";
+	qInfo() << "  LUCIFER STORE - HEADLESS MODE";
+	qInfo() << "========================================";
+	qInfo() << "No GUI will be displayed.";
+	qInfo() << "Control via API at http://127.0.0.1:" << apiPort;
+	qInfo() << "";
+	
+	HeadlessBackend backend(settings);
+	
+	if (!backend.start(apiPort)) {
+		qCritical() << "Failed to start headless backend";
+		return 1;
+	}
+	
+	qInfo() << "Headless mode ready. Waiting for API commands...";
+	qInfo() << "";
+	qInfo() << "Available endpoints:";
+	qInfo() << "  GET  /              - API info";
+	qInfo() << "  GET  /hosts         - List discovered hosts";
+	qInfo() << "  POST /register      - Register a console";
+	qInfo() << "  POST /connect       - Connect to a host";
+	qInfo() << "  POST /disconnect    - Disconnect from stream";
+	qInfo() << "  POST /wakeup        - Wake up a console";
+	qInfo() << "  GET  /stream/status - Get stream status";
+	qInfo() << "  GET  /settings      - Get settings";
+	qInfo() << "  PUT  /settings      - Update settings";
+	qInfo() << "";
+	qInfo() << "Frame sharing: Enabled via shared memory 'ChiakiFrameShare'";
+	qInfo() << "========================================";
+	
 	return app.exec();
 }

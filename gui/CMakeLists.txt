@@ -58,6 +58,8 @@ set(SOURCE_FILES
 	src/systemdinhibit.cpp
 	include/framesharing.h
 	src/framesharing.cpp
+	include/headlessbackend.h
+	src/headlessbackend.cpp
 	)
 set(RESOURCE_FILES "")
 

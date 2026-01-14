@@ -10,8 +10,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QMutex>
 
 class QmlBackend;
+class HeadlessBackend;
 class Settings;
 
 class ApiServer : public QObject
@@ -25,6 +27,10 @@ public:
     bool start(quint16 port = 5218);
     void stop();
     bool isRunning() const { return server && server->isListening(); }
+    
+    // For headless mode
+    void setHeadlessBackend(HeadlessBackend *headless) { headlessBackend = headless; }
+    bool isHeadless() const { return headlessBackend != nullptr; }
 
 private slots:
     void onNewConnection();
@@ -54,8 +60,10 @@ private:
 
     QTcpServer *server = nullptr;
     QmlBackend *backend = nullptr;
+    HeadlessBackend *headlessBackend = nullptr;
     Settings *settings = nullptr;
     QMap<QTcpSocket*, QByteArray> pendingData;
+    QMutex requestMutex;  // Thread-safe request handling
 };
 
 #endif // CHIAKI_APISERVER_H
