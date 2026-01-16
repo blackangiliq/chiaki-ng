@@ -4,7 +4,7 @@
 #define MyAppName "chiaki-ng"
 #define MyAppPublisher "Street Pea"
 #define MyAppURL "https://streetpea.github.io/chiaki-ng/"
-#define MyAppExeName "chiaki.exe"
+#define MyAppExeName "lu.exe"
 #define MyAppPath "..\chiaki-ng-Win"
 #define MyAppVersion() \
   GetVersionComponents(MyAppPath + "\" + MyAppExeName, Local[0], Local[1], Local[2], Local[3]), \
