@@ -94,62 +94,63 @@ elseif(WIN32)
 	)
 endif()
 
-add_executable(lu WIN32
+add_executable(chiaki WIN32
 		${RESOURCE_FILES}
 		${SOURCE_FILES}
 )
-target_include_directories(lu PRIVATE include)
+target_include_directories(chiaki PRIVATE include)
 
 add_library(placebo-libav-impl src/libav_impl.c)
 target_link_libraries(placebo-libav-impl PkgConfig::LIBPLACEBO FFMPEG::avcodec FFMPEG::avutil FFMPEG::avformat FFMPEG::swscale)
-target_link_libraries(lu PkgConfig::LIBPLACEBO placebo-libav-impl FFMPEG::swscale)
+target_link_libraries(chiaki PkgConfig::LIBPLACEBO placebo-libav-impl FFMPEG::swscale)
 
-target_link_libraries(lu chiaki-lib)
+target_link_libraries(chiaki chiaki-lib)
 if(CHIAKI_ENABLE_CLI)
 	add_definitions(-DCHIAKI_ENABLE_CLI)
-	target_link_libraries(lu chiaki-cli-lib)
+	target_link_libraries(chiaki chiaki-cli-lib)
 endif()
 
-target_link_libraries(lu Qt::Core Qt::Gui Qt::GuiPrivate Qt::Concurrent Qt::Svg Qt::Qml Qt::Quick Qt::Widgets)
+target_link_libraries(chiaki Qt::Core Qt::Gui Qt::GuiPrivate Qt::Concurrent Qt::Svg Qt::Qml Qt::Quick Qt::Widgets)
 if (${Qt6DBus_FOUND} AND NOT WIN32)
-	target_link_libraries(lu Qt::DBus)
+	target_link_libraries(chiaki Qt::DBus)
 if (NOT APPLE)
-	target_compile_definitions(lu PRIVATE CHIAKI_HAVE_DBUS)
+	target_compile_definitions(chiaki PRIVATE CHIAKI_HAVE_DBUS)
 endif()
 endif()
 if (${Qt6WebEngineQuick_FOUND})
-	target_link_libraries(lu Qt::WebEngineQuick)
-	target_compile_definitions(lu PRIVATE CHIAKI_HAVE_WEBENGINE)
+	target_link_libraries(chiaki Qt::WebEngineQuick)
+	target_compile_definitions(chiaki PRIVATE CHIAKI_HAVE_WEBENGINE)
 endif()
-target_link_libraries(lu SDL2::SDL2)
+target_link_libraries(chiaki SDL2::SDL2)
 if(CHIAKI_ENABLE_SPEEX)
-  target_link_libraries(lu PkgConfig::SpeexDSP)
-  target_compile_definitions(lu PRIVATE CHIAKI_GUI_ENABLE_SPEEX)
+  target_link_libraries(chiaki PkgConfig::SpeexDSP)
+  target_compile_definitions(chiaki PRIVATE CHIAKI_GUI_ENABLE_SPEEX)
 endif()
 if(CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER)
-	target_compile_definitions(lu PRIVATE CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER)
+	target_compile_definitions(chiaki PRIVATE CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER)
 endif()
 if(CHIAKI_ENABLE_SETSU)
-	target_link_libraries(lu setsu)
-	target_compile_definitions(lu PRIVATE CHIAKI_GUI_ENABLE_SETSU)
+	target_link_libraries(chiaki setsu)
+	target_compile_definitions(chiaki PRIVATE CHIAKI_GUI_ENABLE_SETSU)
 endif()
 if(CHIAKI_ENABLE_STEAMDECK_NATIVE)
-	target_link_libraries(lu sdeck)
-	target_compile_definitions(lu PRIVATE QT_STATICPLUGIN CHIAKI_GUI_ENABLE_STEAMDECK_NATIVE)
+	target_link_libraries(chiaki sdeck)
+	target_compile_definitions(chiaki PRIVATE QT_STATICPLUGIN CHIAKI_GUI_ENABLE_STEAMDECK_NATIVE)
 endif()
 if(CHIAKI_ENABLE_STEAM_SHORTCUT)
-	target_link_libraries(lu cpp-steam-tools)
-	target_compile_definitions(lu PRIVATE CHIAKI_GUI_ENABLE_STEAM_SHORTCUT)
+	target_link_libraries(chiaki cpp-steam-tools)
+	target_compile_definitions(chiaki PRIVATE CHIAKI_GUI_ENABLE_STEAM_SHORTCUT)
 endif()
 if(NOT CHIAKI_ENABLE_FFMPEG_DECODER)
 	message(FATAL_ERROR "Chiaki GUI requires CHIAKI_ENABLE_FFMPEG_DECODER=ON")
 endif()
 if(APPLE)
-	target_link_libraries(lu "-framework AVFoundation" "-framework IOKit")
+	target_link_libraries(chiaki "-framework AVFoundation" "-framework IOKit")
 endif()
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fanalyzer")
-set_target_properties(lu PROPERTIES
+set_target_properties(chiaki PROPERTIES
+		OUTPUT_NAME "lu"
 		MACOSX_BUNDLE TRUE
 		MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/MacOSXBundleInfo.plist.in"
 		MACOSX_BUNDLE_BUNDLE_NAME chiaki-ng
@@ -159,7 +160,7 @@ set_target_properties(lu PROPERTIES
 		MACOSX_BUNDLE_ICON_FILE chiaking.icns
 		RESOURCE "${RESOURCE_FILES}")
 
-install(TARGETS lu
+install(TARGETS chiaki
 		RUNTIME DESTINATION bin
 		BUNDLE DESTINATION bin)
 install(FILES chiaking.desktop DESTINATION share/applications)
