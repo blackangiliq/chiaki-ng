@@ -2,6 +2,6 @@
 Type=Application
 Name=Remote Controller
 Comment=PlayStation Remote Play Client
-Exec=chiaki
+Exec=lu
 Icon=chiaking
 Categories=Game;Network;RemoteAccess;

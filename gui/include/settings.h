@@ -229,10 +229,10 @@ class Settings : public QObject
 		QRect GetStreamGeometry() const;
 		void SetStreamGeometry(QRect geometry);
 
-		bool GetRemotePlayAsk() const           { return settings.value("settings/remote_play_ask", true).toBool(); }
+		bool GetRemotePlayAsk() const           { return settings.value("settings/remote_play_ask", false).toBool(); }
 		void SetRemotePlayAsk(bool asked)       { settings.setValue("settings/remote_play_ask", asked); }
 
-		bool GetAddSteamShortcutAsk() const           { return settings.value("settings/add_steam_shortcut_ask", true).toBool(); }
+		bool GetAddSteamShortcutAsk() const           { return settings.value("settings/add_steam_shortcut_ask", false).toBool(); }
 		void SetAddSteamShortcutAsk(bool asked)       { settings.setValue("settings/add_steam_shortcut_ask", asked); }
 
 		bool GetLogVerbose() const 				{ return settings.value("settings/log_verbose", false).toBool(); }

@@ -518,6 +518,13 @@ QJsonDocument ApiServer::handleGetSettings()
     general["localRenderDisabled"] = settings->GetLocalRenderDisabled();
     general["showStreamStats"] = settings->GetShowStreamStats();
     
+    // Audio Settings
+    QString audioOutDevice = settings->GetAudioOutDevice();
+    general["audioOutDevice"] = audioOutDevice.isEmpty() ? "Auto" : audioOutDevice;
+    
+    QString audioInDevice = settings->GetAudioInDevice();
+    general["audioInDevice"] = audioInDevice.isEmpty() ? "Auto" : audioInDevice;
+    
     response["general"] = general;
     
     // Video Settings - PS5 Local
@@ -609,6 +616,27 @@ QJsonDocument ApiServer::handlePutSettings(const QJsonObject &body)
     if (body.contains("showStreamStats")) {
         settings->SetShowStreamStats(body["showStreamStats"].toBool());
         updated.append("showStreamStats");
+    }
+    
+    // Audio Settings
+    if (body.contains("audioOutDevice")) {
+        QString device = body["audioOutDevice"].toString();
+        if (device == "Auto" || device.isEmpty()) {
+            settings->SetAudioOutDevice("");
+        } else {
+            settings->SetAudioOutDevice(device);
+        }
+        updated.append("audioOutDevice");
+    }
+    
+    if (body.contains("audioInDevice")) {
+        QString device = body["audioInDevice"].toString();
+        if (device == "Auto" || device.isEmpty()) {
+            settings->SetAudioInDevice("");
+        } else {
+            settings->SetAudioInDevice(device);
+        }
+        updated.append("audioInDevice");
     }
     
     response["updated"] = updated;
