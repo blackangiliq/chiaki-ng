@@ -15,6 +15,7 @@
 #include <QJsonArray>
 #include <QDebug>
 #include <QMutexLocker>
+#include <SDL.h>
 
 ApiServer::ApiServer(QmlBackend *backend, Settings *settings, QObject *parent)
     : QObject(parent)
@@ -161,7 +162,8 @@ void ApiServer::handleRequest(QTcpSocket *socket, const QString &method, const Q
             QJsonObject({{"method", "GET"}, {"path", "/settings"}, {"description", "Get all settings"}}),
             QJsonObject({{"method", "PUT"}, {"path", "/settings"}, {"description", "Update settings"}}),
             QJsonObject({{"method", "GET"}, {"path", "/settings/video"}, {"description", "Get video settings"}}),
-            QJsonObject({{"method", "PUT"}, {"path", "/settings/video"}, {"description", "Update video settings"}})
+            QJsonObject({{"method", "PUT"}, {"path", "/settings/video"}, {"description", "Update video settings"}}),
+            QJsonObject({{"method", "GET"}, {"path", "/settings/devices"}, {"description", "Get available audio devices"}})
         });
         sendJsonResponse(socket, 200, QJsonDocument(info));
     }
@@ -197,6 +199,9 @@ void ApiServer::handleRequest(QTcpSocket *socket, const QString &method, const Q
     }
     else if (method == "PUT" && path == "/settings/video") {
         sendJsonResponse(socket, 200, handlePutVideoSettings(jsonBody));
+    }
+    else if (method == "GET" && path == "/settings/devices") {
+        sendJsonResponse(socket, 200, handleGetSettingsDevices());
     }
     else {
         sendErrorResponse(socket, 404, "Not Found");
@@ -525,6 +530,55 @@ QJsonDocument ApiServer::handleGetSettings()
     QString audioInDevice = settings->GetAudioInDevice();
     general["audioInDevice"] = audioInDevice.isEmpty() ? "Auto" : audioInDevice;
     
+    general["audioVolume"] = settings->GetAudioVolume();
+    general["audioBufferSize"] = (int)settings->GetAudioBufferSizeRaw();
+    general["audioVideoDisabled"] = (int)settings->GetAudioVideoDisabled();
+    
+    // Network Settings
+    general["wifiDroppedNotif"] = (int)settings->GetWifiDroppedNotif();
+    general["discoveryEnabled"] = settings->GetDiscoveryEnabled();
+    
+    // Controller/Input Settings
+    general["keyboardEnabled"] = settings->GetKeyboardEnabled();
+    general["mouseTouchEnabled"] = settings->GetMouseTouchEnabled();
+    general["dpadTouchEnabled"] = settings->GetDpadTouchEnabled();
+    general["buttonsByPosition"] = settings->GetButtonsByPosition();
+    general["allowJoystickBackgroundEvents"] = settings->GetAllowJoystickBackgroundEvents();
+    
+    // Rumble/Haptics
+    RumbleHapticsIntensity rumble = settings->GetRumbleHapticsIntensity();
+    QString rumbleStr;
+    switch (rumble) {
+        case RumbleHapticsIntensity::Off: rumbleStr = "off"; break;
+        case RumbleHapticsIntensity::VeryWeak: rumbleStr = "very_weak"; break;
+        case RumbleHapticsIntensity::Weak: rumbleStr = "weak"; break;
+        case RumbleHapticsIntensity::Normal: rumbleStr = "normal"; break;
+        case RumbleHapticsIntensity::Strong: rumbleStr = "strong"; break;
+        case RumbleHapticsIntensity::VeryStrong: rumbleStr = "very_strong"; break;
+        default: rumbleStr = "normal"; break;
+    }
+    general["rumbleHapticsIntensity"] = rumbleStr;
+    general["hapticOverride"] = settings->GetHapticOverride();
+    
+    // Stream Settings
+    general["streamerMode"] = settings->GetStreamerMode();
+    general["automaticConnect"] = settings->GetAutomaticConnect();
+    general["startMicUnmuted"] = settings->GetStartMicUnmuted();
+    general["fullscreenDoubleClickEnabled"] = settings->GetFullscreenDoubleClickEnabled();
+    
+    // Display Settings
+    general["displayTargetContrast"] = settings->GetDisplayTargetContrast();
+    general["displayTargetPeak"] = settings->GetDisplayTargetPeak();
+    general["displayTargetTrc"] = settings->GetDisplayTargetTrc();
+    general["displayTargetPrim"] = settings->GetDisplayTargetPrim();
+    general["customResolutionWidth"] = (int)settings->GetCustomResolutionWidth();
+    general["customResolutionHeight"] = (int)settings->GetCustomResolutionHeight();
+    general["zoomFactor"] = settings->GetZoomFactor();
+    general["packetLossMax"] = settings->GetPacketLossMax();
+    
+    // Log Settings
+    general["logVerbose"] = settings->GetLogVerbose();
+    
     response["general"] = general;
     
     // Video Settings - PS5 Local
@@ -560,6 +614,94 @@ QJsonDocument ApiServer::handleGetSettings()
     video["ps4_remote"] = ps4Remote;
     
     response["video"] = video;
+    
+    // Schema - Allowed values for each setting
+    QJsonObject schema;
+    QJsonObject generalSchema;
+    
+    // Window Type allowed values
+    QJsonArray windowTypeValues;
+    windowTypeValues.append("selected_resolution");
+    windowTypeValues.append("custom_resolution");
+    windowTypeValues.append("fullscreen");
+    windowTypeValues.append("zoom");
+    windowTypeValues.append("stretch");
+    generalSchema["windowType"] = QJsonObject({
+        {"type", "string"},
+        {"allowedValues", windowTypeValues}
+    });
+    
+    // Placebo Preset allowed values
+    QJsonArray placeboPresetValues;
+    placeboPresetValues.append("fast");
+    placeboPresetValues.append("default");
+    placeboPresetValues.append("high_quality");
+    placeboPresetValues.append("custom");
+    generalSchema["placeboPreset"] = QJsonObject({
+        {"type", "string"},
+        {"allowedValues", placeboPresetValues}
+    });
+    
+    // Rumble Haptics Intensity allowed values
+    QJsonArray rumbleIntensityValues;
+    rumbleIntensityValues.append("off");
+    rumbleIntensityValues.append("very_weak");
+    rumbleIntensityValues.append("weak");
+    rumbleIntensityValues.append("normal");
+    rumbleIntensityValues.append("strong");
+    rumbleIntensityValues.append("very_strong");
+    generalSchema["rumbleHapticsIntensity"] = QJsonObject({
+        {"type", "string"},
+        {"allowedValues", rumbleIntensityValues}
+    });
+    
+    // Audio Video Disabled allowed values
+    QJsonArray audioVideoDisabledValues;
+    audioVideoDisabledValues.append(0); // Audio and Video Enabled
+    audioVideoDisabledValues.append(1); // Audio Disabled
+    audioVideoDisabledValues.append(2); // Video Disabled
+    audioVideoDisabledValues.append(3); // Audio and Video Disabled
+    generalSchema["audioVideoDisabled"] = QJsonObject({
+        {"type", "integer"},
+        {"allowedValues", audioVideoDisabledValues},
+        {"description", "0=Both Enabled, 1=Audio Disabled, 2=Video Disabled, 3=Both Disabled"}
+    });
+    
+    // Type hints
+    generalSchema["hardwareDecoder"] = QJsonObject({{"type", "string"}});
+    generalSchema["hideCursor"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["frameSharingEnabled"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["localRenderDisabled"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["showStreamStats"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["audioOutDevice"] = QJsonObject({{"type", "string"}, {"description", "Use GET /settings/devices to get available devices"}});
+    generalSchema["audioInDevice"] = QJsonObject({{"type", "string"}, {"description", "Use GET /settings/devices to get available devices"}});
+    generalSchema["audioVolume"] = QJsonObject({{"type", "integer"}, {"min", 0}, {"max", 128}});
+    generalSchema["audioBufferSize"] = QJsonObject({{"type", "integer"}, {"min", 0}, {"description", "0 = automatic"}});
+    generalSchema["wifiDroppedNotif"] = QJsonObject({{"type", "integer"}, {"min", 0}, {"max", 100}});
+    generalSchema["discoveryEnabled"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["keyboardEnabled"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["mouseTouchEnabled"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["dpadTouchEnabled"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["buttonsByPosition"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["allowJoystickBackgroundEvents"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["hapticOverride"] = QJsonObject({{"type", "number"}, {"min", 0.0}, {"max", 1.0}});
+    generalSchema["streamerMode"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["automaticConnect"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["startMicUnmuted"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["fullscreenDoubleClickEnabled"] = QJsonObject({{"type", "boolean"}});
+    generalSchema["displayTargetContrast"] = QJsonObject({{"type", "integer"}});
+    generalSchema["displayTargetPeak"] = QJsonObject({{"type", "integer"}});
+    generalSchema["displayTargetTrc"] = QJsonObject({{"type", "integer"}});
+    generalSchema["displayTargetPrim"] = QJsonObject({{"type", "integer"}});
+    generalSchema["customResolutionWidth"] = QJsonObject({{"type", "integer"}, {"min", 0}});
+    generalSchema["customResolutionHeight"] = QJsonObject({{"type", "integer"}, {"min", 0}});
+    generalSchema["zoomFactor"] = QJsonObject({{"type", "number"}, {"min", 0.1}, {"max", 10.0}});
+    generalSchema["packetLossMax"] = QJsonObject({{"type", "number"}, {"min", 0.0}, {"max", 1.0}});
+    generalSchema["logVerbose"] = QJsonObject({{"type", "boolean"}});
+    
+    schema["general"] = generalSchema;
+    
+    response["schema"] = schema;
     
     return QJsonDocument(response);
 }
@@ -637,6 +779,144 @@ QJsonDocument ApiServer::handlePutSettings(const QJsonObject &body)
             settings->SetAudioInDevice(device);
         }
         updated.append("audioInDevice");
+    }
+    
+    if (body.contains("audioVolume")) {
+        settings->SetAudioVolume(body["audioVolume"].toInt());
+        updated.append("audioVolume");
+    }
+    
+    if (body.contains("audioBufferSize")) {
+        settings->SetAudioBufferSize(body["audioBufferSize"].toInt());
+        updated.append("audioBufferSize");
+    }
+    
+    if (body.contains("audioVideoDisabled")) {
+        settings->SetAudioVideoDisabled(static_cast<ChiakiDisableAudioVideo>(body["audioVideoDisabled"].toInt()));
+        updated.append("audioVideoDisabled");
+    }
+    
+    // Network Settings
+    if (body.contains("wifiDroppedNotif")) {
+        settings->SetWifiDroppedNotif(body["wifiDroppedNotif"].toInt());
+        updated.append("wifiDroppedNotif");
+    }
+    
+    if (body.contains("discoveryEnabled")) {
+        settings->SetDiscoveryEnabled(body["discoveryEnabled"].toBool());
+        updated.append("discoveryEnabled");
+    }
+    
+    // Controller/Input Settings
+    if (body.contains("keyboardEnabled")) {
+        settings->SetKeyboardEnabled(body["keyboardEnabled"].toBool());
+        updated.append("keyboardEnabled");
+    }
+    
+    if (body.contains("mouseTouchEnabled")) {
+        settings->SetMouseTouchEnabled(body["mouseTouchEnabled"].toBool());
+        updated.append("mouseTouchEnabled");
+    }
+    
+    if (body.contains("dpadTouchEnabled")) {
+        settings->SetDpadTouchEnabled(body["dpadTouchEnabled"].toBool());
+        updated.append("dpadTouchEnabled");
+    }
+    
+    if (body.contains("buttonsByPosition")) {
+        settings->SetButtonsByPosition(body["buttonsByPosition"].toBool());
+        updated.append("buttonsByPosition");
+    }
+    
+    if (body.contains("allowJoystickBackgroundEvents")) {
+        settings->SetAllowJoystickBackgroundEvents(body["allowJoystickBackgroundEvents"].toBool());
+        updated.append("allowJoystickBackgroundEvents");
+    }
+    
+    // Rumble/Haptics
+    if (body.contains("rumbleHapticsIntensity")) {
+        QString ri = body["rumbleHapticsIntensity"].toString().toLower();
+        RumbleHapticsIntensity intensity = RumbleHapticsIntensity::Normal;
+        if (ri == "off") intensity = RumbleHapticsIntensity::Off;
+        else if (ri == "very_weak") intensity = RumbleHapticsIntensity::VeryWeak;
+        else if (ri == "weak") intensity = RumbleHapticsIntensity::Weak;
+        else if (ri == "strong") intensity = RumbleHapticsIntensity::Strong;
+        else if (ri == "very_strong") intensity = RumbleHapticsIntensity::VeryStrong;
+        settings->SetRumbleHapticsIntensity(intensity);
+        updated.append("rumbleHapticsIntensity");
+    }
+    
+    if (body.contains("hapticOverride")) {
+        settings->SetHapticOverride(body["hapticOverride"].toDouble());
+        updated.append("hapticOverride");
+    }
+    
+    // Stream Settings
+    if (body.contains("streamerMode")) {
+        settings->SetStreamerMode(body["streamerMode"].toBool());
+        updated.append("streamerMode");
+    }
+    
+    if (body.contains("automaticConnect")) {
+        settings->SetAutomaticConnect(body["automaticConnect"].toBool());
+        updated.append("automaticConnect");
+    }
+    
+    if (body.contains("startMicUnmuted")) {
+        settings->SetStartMicUnmuted(body["startMicUnmuted"].toBool());
+        updated.append("startMicUnmuted");
+    }
+    
+    if (body.contains("fullscreenDoubleClickEnabled")) {
+        settings->SetFullscreenDoubleClickEnabled(body["fullscreenDoubleClickEnabled"].toBool());
+        updated.append("fullscreenDoubleClickEnabled");
+    }
+    
+    // Display Settings
+    if (body.contains("displayTargetContrast")) {
+        settings->SetDisplayTargetContrast(body["displayTargetContrast"].toInt());
+        updated.append("displayTargetContrast");
+    }
+    
+    if (body.contains("displayTargetPeak")) {
+        settings->SetDisplayTargetPeak(body["displayTargetPeak"].toInt());
+        updated.append("displayTargetPeak");
+    }
+    
+    if (body.contains("displayTargetTrc")) {
+        settings->SetDisplayTargetTrc(body["displayTargetTrc"].toInt());
+        updated.append("displayTargetTrc");
+    }
+    
+    if (body.contains("displayTargetPrim")) {
+        settings->SetDisplayTargetPrim(body["displayTargetPrim"].toInt());
+        updated.append("displayTargetPrim");
+    }
+    
+    if (body.contains("customResolutionWidth")) {
+        settings->SetCustomResolutionWidth(body["customResolutionWidth"].toInt());
+        updated.append("customResolutionWidth");
+    }
+    
+    if (body.contains("customResolutionHeight")) {
+        settings->SetCustomResolutionHeight(body["customResolutionHeight"].toInt());
+        updated.append("customResolutionHeight");
+    }
+    
+    if (body.contains("zoomFactor")) {
+        settings->SetZoomFactor(body["zoomFactor"].toDouble());
+        updated.append("zoomFactor");
+    }
+    
+    if (body.contains("packetLossMax")) {
+        settings->SetPacketLossMax(body["packetLossMax"].toDouble());
+        updated.append("packetLossMax");
+    }
+    
+    // Log Settings
+    if (body.contains("logVerbose")) {
+        settings->SetLogVerbose(body["logVerbose"].toBool());
+        updated.append("logVerbose");
     }
     
     response["updated"] = updated;
@@ -808,5 +1088,43 @@ QJsonDocument ApiServer::handlePutVideoSettings(const QJsonObject &body)
     }
     
     response["updated"] = updated;
+    return QJsonDocument(response);
+}
+
+QJsonDocument ApiServer::handleGetSettingsDevices()
+{
+    QJsonObject response;
+    response["success"] = true;
+    
+    // Get audio devices
+    QJsonArray inputDevices;
+    QJsonArray outputDevices;
+    
+    // Input devices (capture = true)
+    int inputCount = SDL_GetNumAudioDevices(true);
+    for (int i = 0; i < inputCount; i++) {
+        const char* deviceName = SDL_GetAudioDeviceName(i, true);
+        if (deviceName) {
+            inputDevices.append(QString::fromUtf8(deviceName));
+        }
+    }
+    
+    // Output devices (capture = false)
+    int outputCount = SDL_GetNumAudioDevices(false);
+    for (int i = 0; i < outputCount; i++) {
+        const char* deviceName = SDL_GetAudioDeviceName(i, false);
+        if (deviceName) {
+            outputDevices.append(QString::fromUtf8(deviceName));
+        }
+    }
+    
+    QJsonObject devices;
+    devices["input"] = inputDevices;
+    devices["output"] = outputDevices;
+    devices["currentInput"] = settings->GetAudioInDevice().isEmpty() ? "Auto" : settings->GetAudioInDevice();
+    devices["currentOutput"] = settings->GetAudioOutDevice().isEmpty() ? "Auto" : settings->GetAudioOutDevice();
+    
+    response["devices"] = devices;
+    
     return QJsonDocument(response);
 }

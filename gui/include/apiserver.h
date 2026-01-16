@@ -57,6 +57,7 @@ private:
     QJsonDocument handlePutSettings(const QJsonObject &body);
     QJsonDocument handleGetVideoSettings();
     QJsonDocument handlePutVideoSettings(const QJsonObject &body);
+    QJsonDocument handleGetSettingsDevices();
 
     QTcpServer *server = nullptr;
     QmlBackend *backend = nullptr;
