@@ -91,8 +91,8 @@ cd ..
 
 echo "-- Deploy"
 
-mkdir Chiaki && cp build/gui/chiaki.exe Chiaki
+mkdir Chiaki && cp build/gui/lu.exe Chiaki
 mkdir Chiaki-PDB && cp build/gui/chiaki.pdb Chiaki-PDB
 
-"$QT_PATH/bin/windeployqt.exe" Chiaki/chiaki.exe
+"$QT_PATH/bin/windeployqt.exe" Chiaki/lu.exe
 cp -v $COPY_DLLS Chiaki

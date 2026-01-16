@@ -151,7 +151,7 @@ jobs:
       - name: Prepare Qt deployment package
         run: |
           mkdir chiaki-ng-Win
-          cp build\gui\chiaki.exe chiaki-ng-Win
+          cp build\gui\lu.exe chiaki-ng-Win
           cp build\third-party\cpp-steam-tools\cpp-steam-tools.dll chiaki-ng-Win
           cp scripts\qtwebengine_import.qml gui\src\qml\
           cp "${env:VCPKG_INSTALLED_DIR}\${{ env.triplet }}\bin\libcrypto-*-x64.dll" chiaki-ng-Win
@@ -171,7 +171,7 @@ jobs:
           cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\libplacebo-*.dll" chiaki-ng-Win
           cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\shaderc_shared.dll" chiaki-ng-Win
           cp "${{ github.workspace }}\${{ env.dep_folder }}\bin\spirv-cross-c-shared.dll" chiaki-ng-Win
-          windeployqt.exe --no-translations --qmldir=gui\src\qml --release chiaki-ng-Win\chiaki.exe
+          windeployqt.exe --no-translations --qmldir=gui\src\qml --release chiaki-ng-Win\lu.exe
 
       - name: Package chiaki-ng
         run: |
