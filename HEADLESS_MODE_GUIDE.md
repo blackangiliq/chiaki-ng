@@ -80,17 +80,64 @@ GET  /stream/status → حالة البث الحالي
 
 ### الإعدادات
 ```
-GET  /settings      → الحصول على جميع الإعدادات
-PUT  /settings      → تحديث الإعدادات
-GET  /settings/video → إعدادات الفيديو
-PUT  /settings/video → تحديث إعدادات الفيديو
+GET  /settings         → الحصول على جميع الإعدادات
+PUT  /settings         → تحديث الإعدادات
+GET  /settings/video   → إعدادات الفيديو
+PUT  /settings/video   → تحديث إعدادات الفيديو
+GET  /settings/devices → الحصول على قائمة الأجهزة الصوتية المتاحة
 ```
 
 ---
 
 ## 💡 أمثلة الاستخدام
 
-### 1. قائمة الأجهزة
+### 1. الحصول على قائمة الأجهزة الصوتية المتاحة
+
+```bash
+curl http://127.0.0.1:5218/settings/devices
+```
+
+**الرد:**
+```json
+{
+  "success": true,
+  "devices": {
+    "input": [
+      "Microphone (Realtek Audio)",
+      "Line In (Realtek Audio)",
+      "Stereo Mix (Realtek Audio)"
+    ],
+    "output": [
+      "Speakers (Realtek Audio)",
+      "Headphones (Realtek Audio)",
+      "Digital Audio (S/PDIF) (Realtek Audio)"
+    ],
+    "currentInput": "Auto",
+    "currentOutput": "Speakers (Realtek Audio)"
+  }
+}
+```
+
+**الاستخدام:**
+- استخدم هذا الـ endpoint لمعرفة الأجهزة الصوتية المتاحة على النظام
+- ثم استخدم اسم الجهاز في `PUT /settings` لتحديد `audioInDevice` أو `audioOutDevice`
+- استخدم `"Auto"` للسماح للتطبيق باختيار الجهاز تلقائياً
+
+**مثال - تحديث جهاز الصوت:**
+```bash
+# 1. احصل على قائمة الأجهزة
+curl http://127.0.0.1:5218/settings/devices
+
+# 2. حدّث جهاز الصوت باستخدام اسم الجهاز من القائمة
+curl -X PUT http://127.0.0.1:5218/settings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "audioOutDevice": "Headphones (Realtek Audio)",
+    "audioInDevice": "Microphone (Realtek Audio)"
+  }'
+```
+
+### 2. قائمة الأجهزة (PlayStation)
 
 ```bash
 curl http://127.0.0.1:5218/hosts
@@ -183,6 +230,25 @@ curl -X PUT http://127.0.0.1:5218/settings \
     "hideCursor": true
   }'
 ```
+
+**مثال شامل - تحديث جهاز الصوت:**
+```bash
+# 1. احصل على قائمة الأجهزة الصوتية المتاحة
+curl http://127.0.0.1:5218/settings/devices
+
+# 2. حدّث جهاز الصوت باستخدام اسم الجهاز من القائمة
+curl -X PUT http://127.0.0.1:5218/settings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "audioOutDevice": "Headphones (Realtek Audio)",
+    "audioInDevice": "Microphone (Realtek Audio)",
+    "audioVolume": 80
+  }'
+```
+
+**ملاحظة:** 
+- استخدم `"Auto"` للسماح للتطبيق باختيار الجهاز تلقائياً
+- يجب استخدام الأسماء الدقيقة للأجهزة كما تظهر في `/settings/devices`
 
 ### 7. تسجيل كونسول جديد
 
@@ -439,6 +505,6 @@ chiaki.exe --headless --api-port 8080
 
 ---
 
-**تم التطوير بواسطة**: Lucifer Store Team  
+**تم التطوير بواسطة**: Urscript Team  
 **التاريخ**: 2026-01-14  
 **الإصدار**: 1.9.9

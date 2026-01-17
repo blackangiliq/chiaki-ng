@@ -259,9 +259,9 @@ void QmlMainWindow::setSettings(Settings *new_settings)
     QString profile = settings->GetCurrentProfile();
     qCCritical(chiakiGui) << "Current Profile: " << profile;
     if(profile.isEmpty())
-        QGuiApplication::setApplicationDisplayName("Lucifer Store");
+        QGuiApplication::setApplicationDisplayName("Urscript");
     else
-        QGuiApplication::setApplicationDisplayName(QString("Lucifer Store:%1").arg(profile));
+        QGuiApplication::setApplicationDisplayName(QString("Urscript:%1").arg(profile));
     this->setTitle(QGuiApplication::applicationDisplayName());
 }
 

@@ -99,10 +99,10 @@ int real_main(int argc, char *argv[])
 	qRegisterMetaType<ChiakiRegistEventType>();
 	qRegisterMetaType<ChiakiLogLevel>();
 
-	QGuiApplication::setOrganizationName("Lucifer");
-	QGuiApplication::setApplicationName("LuciferStore");
+	QGuiApplication::setOrganizationName("Urscript");
+	QGuiApplication::setApplicationName("UrscriptStore");
 	QGuiApplication::setApplicationVersion(CHIAKI_VERSION);
-	QGuiApplication::setApplicationDisplayName("Lucifer Store");
+	QGuiApplication::setApplicationDisplayName("Urscript");
 
 	// Check for headless mode BEFORE creating any Qt application
 	bool headless = isHeadlessMode(argc, argv);
@@ -117,7 +117,7 @@ int real_main(int argc, char *argv[])
 			return 1;
 		}
 		
-		SDL_SetHint(SDL_HINT_APP_NAME, "Lucifer Store");
+		SDL_SetHint(SDL_HINT_APP_NAME, "Urscript");
 		if (SDL_Init(SDL_INIT_AUDIO) < 0) {
 			fprintf(stderr, "SDL Audio init failed: %s\n", SDL_GetError());
 			return 1;
@@ -169,7 +169,7 @@ int real_main(int argc, char *argv[])
 		return 1;
 	}
 
-    SDL_SetHint(SDL_HINT_APP_NAME, "Lucifer Store");
+    SDL_SetHint(SDL_HINT_APP_NAME, "Urscript");
 
 	if(SDL_Init(SDL_INIT_AUDIO) < 0)
 	{
@@ -183,8 +183,8 @@ int real_main(int argc, char *argv[])
 #endif
 	QApplication app(argc, argv);
 
-	// Lucifer Store Logo as app icon
-	QGuiApplication::setWindowIcon(QIcon(":/icons/lucifer_logo.png"));
+	// Urscript Logo as app icon
+	QGuiApplication::setWindowIcon(QIcon(":/icons/urscript_logo.png"));
 
 	QCommandLineParser parser;
 	parser.setOptionsAfterPositionalArgumentsMode(QCommandLineParser::ParseAsPositionalArguments);

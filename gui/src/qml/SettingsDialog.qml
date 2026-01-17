@@ -2659,7 +2659,7 @@ DialogView {
                     Layout.preferredWidth: 200
                     fillMode: Image.PreserveAspectFit
                     verticalAlignment: Image.AlignTop
-                    source: "qrc:/icons/lucifer_logo.png"
+                    source: "qrc:/icons/urscript_logo.png"
                 }
 
                 Label {

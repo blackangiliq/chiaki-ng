@@ -11,7 +11,7 @@ QtObject {
     // ════════════════════════════════════════════════════════════
     // 🎮 APP NAME - CHANGE THIS VALUE TO RENAME THE APP
     // ════════════════════════════════════════════════════════════
-    readonly property string appName: "Lucifer Store"
+    readonly property string appName: "Urscript"
     
     // App version (synced with Qt.application.version)
     readonly property string appVersion: Qt.application.version

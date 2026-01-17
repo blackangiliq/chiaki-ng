@@ -290,7 +290,7 @@ Pane {
     }     
 
     // ═══════════════════════════════════════════════════════════════
-    // 🎛️ BOTTOM CONTROLS - WiFi + Settings + Lucifer text
+    // 🎛️ BOTTOM CONTROLS - WiFi + Settings + Urscript text
     // ═══════════════════════════════════════════════════════════════
     Row {
         anchors {
@@ -325,10 +325,10 @@ Pane {
             Material.background: "#7B1FA2"  // Purple accent
         }
 
-        // Lucifer Label next to settings
+        // Urscript Label next to settings
         Label {
             anchors.verticalCenter: parent.verticalCenter
-            text: "Lucifer"
+            text: "Urscript"
             font.pixelSize: 24
             font.bold: true
             color: "#9C27B0"  // Purple color
@@ -336,12 +336,12 @@ Pane {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 🎨 BACKGROUND LOGO - Lucifer Logo
+    // 🎨 BACKGROUND LOGO - Urscript Logo
     // ═══════════════════════════════════════════════════════════════
     Image {
         id: logoImage
         anchors.centerIn: parent
-        source: "qrc:/icons/lucifer_logo.png"
+        source: "qrc:/icons/urscript_logo.png"
         width: Math.min(parent.width, parent.height) * 0.5
         height: width
         fillMode: Image.PreserveAspectFit

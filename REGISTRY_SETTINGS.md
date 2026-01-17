@@ -4,17 +4,17 @@
 
 ### بدون Profile (الافتراضي)
 ```
-HKEY_CURRENT_USER\Software\Lucifer\LuciferStore
+HKEY_CURRENT_USER\Software\Urscript\UrscriptStore
 ```
 
 ### مع Profile محدد
 ```
-HKEY_CURRENT_USER\Software\Lucifer\LuciferStore-{ProfileName}
+HKEY_CURRENT_USER\Software\Urscript\UrscriptStore-{ProfileName}
 ```
 
 مثال:
 ```
-HKEY_CURRENT_USER\Software\Lucifer\LuciferStore-MyProfile
+HKEY_CURRENT_USER\Software\Urscript\UrscriptStore-MyProfile
 ```
 
 ---
@@ -23,18 +23,18 @@ HKEY_CURRENT_USER\Software\Lucifer\LuciferStore-MyProfile
 
 ### Organization Name
 ```
-"Lucifer"
+"Urscript"
 ```
 
 ### Application Name
 ```
-"LuciferStore"
+"UrscriptStore"
 ```
 
 **المصدر**: `gui/src/main.cpp`
 ```cpp
-QGuiApplication::setOrganizationName("Lucifer");
-QGuiApplication::setApplicationName("LuciferStore");
+QGuiApplication::setOrganizationName("Urscript");
+QGuiApplication::setApplicationName("UrscriptStore");
 ```
 
 ---
@@ -43,7 +43,7 @@ QGuiApplication::setApplicationName("LuciferStore");
 
 ### الإعدادات العامة
 ```
-HKEY_CURRENT_USER\Software\Lucifer\LuciferStore\
+HKEY_CURRENT_USER\Software\Urscript\UrscriptStore\
   ├── settings\
   │   ├── audio_video_disabled (int) - تعطيل الصوت/الفيديو (0=لا شيء, 1=صوت, 2=فيديو, 3=كلاهما)
   │   ├── auto_discovery (bool) - الاكتشاف التلقائي للأجهزة
@@ -163,7 +163,7 @@ HKEY_CURRENT_USER\Software\Lucifer\LuciferStore\
 
 ### إعدادات Placebo (في مفتاح منفصل)
 ```
-HKEY_CURRENT_USER\Software\Lucifer\pl_render_params\
+HKEY_CURRENT_USER\Software\Urscript\pl_render_params\
   ├── placebo_settings\
   │   ├── version (string) - إصدار إعدادات Placebo
   │   │
@@ -292,27 +292,27 @@ settings/codec_remote_ps5 = 1 (H265)
 2. اكتب `regedit` واضغط Enter
 3. انتقل إلى:
    ```
-   HKEY_CURRENT_USER\Software\Lucifer\LuciferStore
+   HKEY_CURRENT_USER\Software\Urscript\UrscriptStore
    ```
 
 ### 2. استخدام PowerShell
 
 ```powershell
 # قراءة قيمة
-Get-ItemProperty -Path "HKCU:\Software\Lucifer\LuciferStore\settings" -Name "hide_cursor"
+Get-ItemProperty -Path "HKCU:\Software\Urscript\UrscriptStore\settings" -Name "hide_cursor"
 
 # كتابة قيمة
-Set-ItemProperty -Path "HKCU:\Software\Lucifer\LuciferStore\settings" -Name "hide_cursor" -Value 1
+Set-ItemProperty -Path "HKCU:\Software\Urscript\UrscriptStore\settings" -Name "hide_cursor" -Value 1
 
 # قراءة جميع الإعدادات
-Get-ItemProperty -Path "HKCU:\Software\Lucifer\LuciferStore\settings"
+Get-ItemProperty -Path "HKCU:\Software\Urscript\UrscriptStore\settings"
 
 # تفعيل الاتصال التلقائي
-Set-ItemProperty -Path "HKCU:\Software\Lucifer\LuciferStore\settings" -Name "automatic_connect" -Value 1
+Set-ItemProperty -Path "HKCU:\Software\Urscript\UrscriptStore\settings" -Name "automatic_connect" -Value 1
 
 # تعيين MAC address للاتصال التلقائي (مثال: "aabbccddeeff" كـ hex bytes)
 $macBytes = [byte[]](0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff)
-Set-ItemProperty -Path "HKCU:\Software\Lucifer\LuciferStore\settings" -Name "auto_connect_mac" -Value $macBytes -Type Binary
+Set-ItemProperty -Path "HKCU:\Software\Urscript\UrscriptStore\settings" -Name "auto_connect_mac" -Value $macBytes -Type Binary
 ```
 
 ### 3. استخدام C# (.NET)
@@ -321,7 +321,7 @@ Set-ItemProperty -Path "HKCU:\Software\Lucifer\LuciferStore\settings" -Name "aut
 using Microsoft.Win32;
 
 // قراءة قيمة
-string keyPath = @"Software\Lucifer\LuciferStore";
+string keyPath = @"Software\Urscript\UrscriptStore";
 RegistryKey key = Registry.CurrentUser.OpenSubKey(keyPath + @"\settings");
 if (key != null) {
     object value = key.GetValue("hide_cursor");
@@ -352,7 +352,7 @@ autoConnectKey.Close();
 HKEY hKey;
 LONG result = RegOpenKeyEx(
     HKEY_CURRENT_USER,
-    L"Software\\Lucifer\\LuciferStore\\settings",
+    L"Software\\Urscript\\UrscriptStore\\settings",
     0,
     KEY_READ,
     &hKey
@@ -386,7 +386,7 @@ if (result == ERROR_SUCCESS) {
 
 2. **Profiles**: إذا استخدمت profile، سيتم إنشاء مفتاح منفصل:
    ```
-   LuciferStore-{ProfileName}
+   UrscriptStore-{ProfileName}
    ```
 
 3. **البيانات الثنائية**: بعض القيم مثل `rp_regist_key` و `rp_key` تُحفظ كـ binary data
@@ -395,7 +395,7 @@ if (result == ERROR_SUCCESS) {
 
 5. **Placebo Settings**: تُحفظ في مفتاح منفصل:
    ```
-   HKEY_CURRENT_USER\Software\Lucifer\pl_render_params
+   HKEY_CURRENT_USER\Software\Urscript\pl_render_params
    ```
 
 6. **Auto Connect**: 
