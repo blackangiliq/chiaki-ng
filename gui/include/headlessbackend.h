@@ -13,7 +13,10 @@
 #include "streamsession.h"
 #include "framesharing.h"
 
+#include <chiaki/regist.h>
+
 class ApiServer;
+class QmlRegist;
 
 class HeadlessBackend : public QObject
 {
