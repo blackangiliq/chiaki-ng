@@ -4,8 +4,10 @@
 #include "headlessbackend.h"
 #include "apiserver.h"
 #include "host.h"
+#include "qmlbackend.h"
 
 #include <chiaki/session.h>
+#include <chiaki/regist.h>
 
 #include <QDebug>
 #include <QTimer>
@@ -174,13 +176,62 @@ bool HeadlessBackend::registerHost(const QString &host, const QString &psn_id,
                                    bool broadcast, int target, const QJSValue &callback)
 {
     Q_UNUSED(callback);
-    Q_UNUSED(cpin);
     
-    qInfo() << "Starting registration for" << host;
+    qInfo() << "Starting registration for host:" << host << "target:" << target;
     
-    // Registration needs to be implemented properly with ChiakiRegist
-    // For now, return true to indicate the request was received
-    // Full implementation would require async handling
+    // Create registration info
+    ChiakiRegistInfo info = {};
+    QByteArray hostb = host.toUtf8();
+    info.host = hostb.constData();
+    info.target = static_cast<ChiakiTarget>(target);
+    info.broadcast = broadcast;
+    info.pin = (uint32_t)pin.toULong();
+    info.console_pin = (uint32_t)cpin.toULong();
+    info.holepunch_info = nullptr;
+    info.rudp = nullptr;
+    
+    QByteArray psn_idb;
+    if (target == CHIAKI_TARGET_PS4_8) {
+        psn_idb = psn_id.toUtf8();
+        info.psn_online_id = psn_idb.constData();
+    } else {
+        QByteArray account_id = QByteArray::fromBase64(psn_id.toUtf8());
+        if (account_id.size() != CHIAKI_PSN_ACCOUNT_ID_SIZE) {
+            qWarning() << "Invalid PSN Account ID size:" << account_id.size() << "expected:" << CHIAKI_PSN_ACCOUNT_ID_SIZE;
+            emit error(tr("Invalid Account-ID"), tr("The PSN Account-ID must be exactly %1 bytes encoded as base64.").arg(CHIAKI_PSN_ACCOUNT_ID_SIZE));
+            return false;
+        }
+        info.psn_online_id = nullptr;
+        memcpy(info.psn_account_id, account_id.constData(), CHIAKI_PSN_ACCOUNT_ID_SIZE);
+    }
+    
+    // Create QmlRegist object to handle registration
+    auto regist = new QmlRegist(info, m_settings->GetLogLevelMask(), this);
+    
+    connect(regist, &QmlRegist::log, this, [](ChiakiLogLevel level, QString msg) {
+        qDebug() << "[REGIST]" << chiaki_log_level_char(level) << msg;
+    });
+    
+    connect(regist, &QmlRegist::failed, this, [this, regist]() {
+        qWarning() << "Registration failed";
+        emit error("Registration Failed", "Failed to register with the console");
+        regist->deleteLater();
+    });
+    
+    connect(regist, &QmlRegist::success, this, [this, host, regist](const RegisteredHost &rhost) {
+        qInfo() << "Registration successful for" << rhost.GetServerNickname();
+        m_settings->AddRegisteredHost(rhost);
+        
+        // Also save as manual host if not discovered
+        ManualHost manual_host;
+        manual_host.SetHost(host);
+        manual_host.Register(rhost);
+        m_settings->SetManualHost(manual_host);
+        
+        emit hostsChanged();
+        regist->deleteLater();
+    });
+    
     return true;
 }
 
